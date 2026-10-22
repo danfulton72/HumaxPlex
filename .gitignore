@@ -1,0 +1,12 @@
+upstream/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml
+__pycache__/
+*.pyc

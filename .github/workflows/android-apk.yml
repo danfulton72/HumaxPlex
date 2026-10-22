@@ -1,0 +1,34 @@
+name: Build HumaxPlex debug APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Prepare JavaScript assets
+        run: bash ./prepare.sh
+      - name: Compile APK
+        run: cd android && gradle --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HumaxPlex-debug-apk
+          path: android/app/build/outputs/apk/debug/HumaxPlex-debug.apk
+          if-no-files-found: error

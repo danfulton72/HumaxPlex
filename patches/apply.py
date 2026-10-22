@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Copy upstream SamSUCKS web UI and adapt for Android 9."""
+from pathlib import Path
+import shutil
+import sys
+
+source = Path(sys.argv[1]).resolve()
+dest = Path(sys.argv[2]).resolve()
+assert (source / "app/js/screens/player.js").is_file(), "Expected upstream SamSUCKS checkout"
+if dest.exists():
+    shutil.rmtree(dest)
+shutil.copytree(source / "app", dest)
+
+def edit(path, old, new):
+    f = dest / path
+    data = f.read_text(encoding="utf-8")
+    if old not in data:
+        raise RuntimeError("Upstream has changed; patch no longer applies: " + path)
+    f.write_text(data.replace(old, new), encoding="utf-8")
+
+edit("index.html", '<script src="$WEBAPIS/webapis/webapis.js"></script>', "")
+edit("index.html", "<title>SamSUCKS</title>", "<title>HumaxPlex</title>")
+edit("js/app.js", "import { isTizen, registerKeys } from './platform/tizen.js';",
+     "import { isTizen, registerKeys } from './platform/tizen.js';\nimport { inject } from './input.js';".replace("\\n", "\n"))
+edit("js/app.js", "  registerKeys();", "  registerKeys();\n  window.__androidAction = inject;".replace("\\n", "\n"))
+edit("js/platform/tizen.js", "return { model, name, platform: isTizen ? 'Samsung' : 'Web' };",
+     "return { model: 'FVP-4KGTR', name: 'Humax FVP-4KGTR', platform: 'Android' };")
+edit("js/plex/client.js", "'X-Plex-Platform-Version': '6.5',", "'X-Plex-Platform-Version': '9',")
+edit("js/plex/client.js", "export const PRODUCT = 'SamSUCKS';", "export const PRODUCT = 'HumaxPlex';")
+edit("js/screens/player.js",
+     "  container: { mp4: 1, m4v: 1, mov: 1, mkv: 1, webm: 1, ts: 1, mpegts: 1, avi: 1 },\n  video: { h264: 1, hevc: 1, vp9: 1, av1: 1, mpeg4: 1, mpeg2video: 1, vc1: 1 },\n  audio: { aac: 1, ac3: 1, eac3: 1, mp3: 1, mp2: 1, flac: 1, opus: 1, vorbis: 1, pcm: 1 },".replace("\\n","\n"),
+     "  container: { mp4: 1, m4v: 1 },\n  video: { h264: 1 },\n  audio: { aac: 1, mp3: 1 },".replace("\\n","\n"))
+print("Prepared HumaxPlex app assets at", dest)
