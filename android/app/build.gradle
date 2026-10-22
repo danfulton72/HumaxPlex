@@ -6,13 +6,18 @@ android {
         applicationId 'org.samsucks.humax'
         minSdk 28
         targetSdk 28
-        versionCode 4
-        versionName '0.1.4-diagnostic'
+        versionCode 5
+        versionName '0.1.5-nativeplayer'
     }
     buildTypes { release { minifyEnabled false } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
-dependencies { implementation 'androidx.webkit:webkit:1.12.1' }
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.4.1'
+    implementation 'androidx.media3:media3-ui:1.4.1'
+}
 android.applicationVariants.all { variant ->
     variant.outputs.all { outputFileName = "HumaxPlex-${variant.buildType.name}.apk" }
 }
