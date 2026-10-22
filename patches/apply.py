@@ -129,6 +129,16 @@ edit("js/screens/player.js",
 edit("js/screens/player.js", "    player.destroy();",
      "    if (window.__humaxSetQuality) delete window.__humaxSetQuality;\n    player.destroy();")
 
+# Plex uses the /link/?pin= URL for short four-character TV link codes.
+# The generic app.plex.tv/auth route is intended for a different auth flow.
+edit("js/plex/auth.js",
+     """  return 'https://app.plex.tv/auth#?' + query({
+    clientID: clientId,
+    code,
+    'context[device][product]': PRODUCT,
+  });""",
+     """  return 'https://plex.tv/link/?pin=' + encodeURIComponent(code);""")
+
 # Media3 backend delegates HLS/MP4 playback to Android, not Android WebView.
 native_backend = """
 function humaxBackend(container, listener) {
