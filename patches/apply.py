@@ -70,7 +70,8 @@ edit("js/ui/images.js",
      """    if (loader.decode) loader.decode().then(() => done(true), () => done(false));
     else { loader.onload = () => done(true); loader.onerror = () => done(false); }""",
      """    loader.onload = () => done(true);
-    loader.onerror = () => { console.warn('HumaxPlex image load failed', job.url.split('?')[0]); done(false); };""")
+    loader.onerror = () => { console.warn('HumaxPlex image load failed', job.url.split('?')[0]); done(false); };
+    loader.src = job.url;""")
 
 # Media3 backend delegates HLS/MP4 playback to Android, not Android WebView.
 native_backend = """
