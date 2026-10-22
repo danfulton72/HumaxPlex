@@ -33,7 +33,7 @@ edit("js/plex/client.js", "'X-Plex-Platform-Version': '6.5',", "'X-Plex-Platform
 edit("js/plex/client.js", "export const PRODUCT = 'SamSUCKS';", "export const PRODUCT = 'HumaxPlex';")
 edit("js/screens/player.js",
      "  container: { mp4: 1, m4v: 1, mov: 1, mkv: 1, webm: 1, ts: 1, mpegts: 1, avi: 1 },\n  video: { h264: 1, hevc: 1, vp9: 1, av1: 1, mpeg4: 1, mpeg2video: 1, vc1: 1 },\n  audio: { aac: 1, ac3: 1, eac3: 1, mp3: 1, mp2: 1, flac: 1, opus: 1, vorbis: 1, pcm: 1 },".replace("\\n","\n"),
-     "  container: { mp4: 1, m4v: 1 },\n  video: { h264: 1 },\n  audio: { aac: 1, mp3: 1 },".replace("\\n","\n"))
+     "  container: { mp4: 1, m4v: 1, mkv: 1 },\n  video: { h264: 1, hevc: 1 },\n  audio: { aac: 1, ac3: 1, eac3: 1, mp3: 1 },".replace("\\n","\n"))
 
 old = """function fitWindow() {
   const root = document.documentElement;
