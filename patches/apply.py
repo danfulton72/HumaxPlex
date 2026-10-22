@@ -105,6 +105,30 @@ edit("js/screens/player.js",
      "      subStream = streamsOf(part, 3).find(s => s.selected) || null;",
      "      subStream = null;")
 
+
+# Allow the native quality menu to request real Plex stream changes. A quality
+# change restarts the same item at the current position using a new transcode.
+edit("js/screens/player.js",
+     "  let mode = 'direct';",
+     """  let mode = 'direct';
+  let humaxQuality = null;
+  window.__humaxSetQuality = (bitrate, resolution) => {
+    if (!alive || !media || !part) return;
+    humaxQuality = bitrate > 0 ? { bitrate, resolution } : null;
+    mode = humaxQuality ? 'hls' : decideMode();
+    triedFallback = false;
+    open(position).catch(e => failed(e.message || String(e)));
+  };""")
+edit("js/screens/player.js",
+     """        audioStreamID: audioStream && audioStream.id,
+        subtitleStreamID: burn ? subStream.id : undefined,""",
+     """        audioStreamID: audioStream && audioStream.id,
+        subtitleStreamID: burn ? subStream.id : undefined,
+        maxBitrate: humaxQuality ? humaxQuality.bitrate : 40000,
+        resolution: humaxQuality ? humaxQuality.resolution : '3840x2160',""")
+edit("js/screens/player.js", "    player.destroy();",
+     "    if (window.__humaxSetQuality) delete window.__humaxSetQuality;\n    player.destroy();")
+
 # Media3 backend delegates HLS/MP4 playback to Android, not Android WebView.
 native_backend = """
 function humaxBackend(container, listener) {
