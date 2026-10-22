@@ -19,6 +19,10 @@ import androidx.media3.common.Tracks;
 import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.TrackSelectionParameters;
 import android.app.AlertDialog;
+import android.app.Dialog;
+import android.graphics.drawable.GradientDrawable;
+import android.util.TypedValue;
+import java.util.function.Consumer;
 import java.util.ArrayList;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -43,6 +47,7 @@ public final class MainActivity extends Activity {
     private FrameLayout layout;
     private PlayerView nativeView;
     private ExoPlayer nativePlayer;
+    private Dialog settingsDialog;
     private LinearLayout playbackHud;
     private ProgressBar playbackProgress;
     private TextView playbackTimes;
@@ -268,20 +273,105 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void close() { runOnUiThread(() -> closeVideo()); }
     }
 
+
+    private int dp(int n) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, n,
+            getResources().getDisplayMetrics());
+    }
+    private void showOptions(String title, String[] options, Consumer<Integer> callback) {
+        if (settingsDialog != null) settingsDialog.dismiss();
+        Dialog dialog = new Dialog(this);
+        settingsDialog = dialog;
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(22), dp(20), dp(22), dp(20));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xf51a202c);
+        bg.setCornerRadius(dp(20));
+        bg.setStroke(dp(1), 0xff424c5e);
+        panel.setBackground(bg);
+        TextView heading = new TextView(this);
+        heading.setText(title);
+        heading.setTextSize(23);
+        heading.setTextColor(Color.WHITE);
+        heading.setPadding(dp(8), 0, dp(8), dp(12));
+        panel.addView(heading);
+        for (int i = 0; i < options.length; i++) {
+            final int index = i;
+            TextView option = new TextView(this);
+            option.setText(options[i]);
+            option.setTextSize(17);
+            option.setTextColor(0xfff7f4ef);
+            option.setFocusable(true);
+            option.setClickable(true);
+            option.setPadding(dp(14), dp(10), dp(14), dp(10));
+            GradientDrawable item = new GradientDrawable();
+            item.setColor(0xff293242);
+            item.setCornerRadius(dp(10));
+            option.setBackground(item);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = dp(5);
+            panel.addView(option, lp);
+            option.setOnFocusChangeListener((view, focused) -> {
+                item.setColor(focused ? 0xffc84552 : 0xff293242);
+                option.invalidate();
+            });
+            option.setOnClickListener(v -> {
+                dialog.dismiss();
+                if (settingsDialog == dialog) settingsDialog = null;
+                callback.accept(index);
+            });
+            if (i == 0) option.requestFocus();
+        }
+        dialog.setContentView(panel);
+        dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        dialog.getWindow().setLayout(dp(500), -2);
+        dialog.setOnDismissListener(d -> {
+            if (settingsDialog == dialog) settingsDialog = null;
+        });
+        dialog.show();
+        dialog.getWindow().setLayout(Math.min(dp(500), getResources().getDisplayMetrics().widthPixels - dp(60)), -2);
+    }
+    private void requestQuality(int bitrate, String resolution) {
+        if (nativePlayer == null) return;
+        String statement = "window.__humaxSetQuality && window.__humaxSetQuality(" +
+            bitrate + "," + org.json.JSONObject.quote(resolution) + ")";
+        web.evaluateJavascript(statement, null);
+        showPlaybackHud();
+    }
+    private void chooseQuality() {
+        showOptions("Video quality", new String[]{
+            "Original • Direct play when supported",
+            "1080p • 12 Mbps (transcode)",
+            "1080p • 8 Mbps (transcode)",
+            "720p • 4 Mbps (transcode)",
+            "480p • 2 Mbps (transcode)"
+        }, choice -> {
+            switch (choice) {
+                case 0: requestQuality(0, "original"); break;
+                case 1: requestQuality(12000, "1920x1080"); break;
+                case 2: requestQuality(8000, "1920x1080"); break;
+                case 3: requestQuality(4000, "1280x720"); break;
+                case 4: requestQuality(2000, "854x480"); break;
+            }
+        });
+    }
     private void showTrackMenu() {
         if (nativePlayer == null) return;
-        new AlertDialog.Builder(this).setTitle("Playback settings")
-            .setItems(new String[]{"Audio track", "Subtitles", "Video information"}, (d, choice) -> {
-                if (choice == 0) chooseTracks(C.TRACK_TYPE_AUDIO);
-                if (choice == 1) chooseTracks(C.TRACK_TYPE_TEXT);
-                if (choice == 2) {
-                    androidx.media3.common.Format f = nativePlayer.getVideoFormat();
-                    String info = f == null ? "Not available" : f.width + "x" + f.height +
-                        " / " + f.sampleMimeType + " / " + f.frameRate + " fps";
-                    new AlertDialog.Builder(this).setTitle("Video information").setMessage(info)
-                        .setPositiveButton("OK", null).show();
-                }
-            }).setNegativeButton("Cancel", null).show();
+        showOptions("Playback settings", new String[]{
+            "Audio tracks", "Subtitles", "Video quality", "Video information"
+        }, choice -> {
+            if (choice == 0) chooseTracks(C.TRACK_TYPE_AUDIO);
+            if (choice == 1) chooseTracks(C.TRACK_TYPE_TEXT);
+            if (choice == 2) chooseQuality();
+            if (choice == 3) {
+                androidx.media3.common.Format fmt = nativePlayer.getVideoFormat();
+                showOptions("Video information",
+                    new String[]{fmt == null ? "Not available" : fmt.width + "x" + fmt.height +
+                        " • " + fmt.sampleMimeType + " • " + fmt.frameRate + " fps", "Back"},
+                    selected -> showTrackMenu());
+            }
+        });
     }
     private void chooseTracks(int type) {
         if (nativePlayer == null) return;
@@ -305,9 +395,8 @@ public final class MainActivity extends Activity {
                 .setPositiveButton("OK", null).show();
             return;
         }
-        new AlertDialog.Builder(this)
-            .setTitle(type == C.TRACK_TYPE_AUDIO ? "Audio tracks" : "Subtitles")
-            .setItems(labels.toArray(new String[0]), (dialog, selected) -> {
+        showOptions(type == C.TRACK_TYPE_AUDIO ? "Audio tracks" : "Subtitles",
+            labels.toArray(new String[0]), selected -> {
                 TrackSelectionParameters.Builder b = nativePlayer.getTrackSelectionParameters().buildUpon();
                 if (type == C.TRACK_TYPE_TEXT && selected == 0) {
                     b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true);
@@ -319,7 +408,7 @@ public final class MainActivity extends Activity {
                 }
                 nativePlayer.setTrackSelectionParameters(b.build());
                 showPlaybackHud();
-            }).setNegativeButton("Back", (d, w) -> showTrackMenu()).show();
+            });
     }
     private String action(int code) {
         switch(code) {
@@ -341,6 +430,7 @@ public final class MainActivity extends Activity {
         }
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (settingsDialog != null && settingsDialog.isShowing()) return super.dispatchKeyEvent(event);
         // Route remote keys before the Media3 video view can consume them.
         String a = action(event.getKeyCode());
         if (a != null && web != null) {
