@@ -7,6 +7,9 @@ import android.os.Looper;
 import android.graphics.Color;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import java.util.Locale;
 import android.view.Gravity;
 import android.webkit.JavascriptInterface;
 import androidx.media3.common.MediaItem;
@@ -34,6 +37,10 @@ public final class MainActivity extends Activity {
     private FrameLayout layout;
     private PlayerView nativeView;
     private ExoPlayer nativePlayer;
+    private LinearLayout playbackHud;
+    private ProgressBar playbackProgress;
+    private TextView playbackTimes;
+    private long hudShownAt;
     private int imageFailures = 0;
     private String lastImageIssue = "none";
     private String videoStats = "video idle";
@@ -125,6 +132,7 @@ public final class MainActivity extends Activity {
                     js("time", String.valueOf(nativePlayer.getCurrentPosition()));
                     androidx.media3.common.Format fmt = nativePlayer.getVideoFormat();
                     androidx.media3.exoplayer.DecoderCounters counts = nativePlayer.getVideoDecoderCounters();
+                    updatePlaybackHud();
                     videoStats = fmt == null ? "video initializing" :
                         "video " + fmt.width + "x" + fmt.height + " fps=" + fmt.frameRate +
                         " codec=" + fmt.sampleMimeType + " bitrate=" + fmt.bitrate +
@@ -137,6 +145,33 @@ public final class MainActivity extends Activity {
             }
         });
     }
+
+    private String clock(long ms) {
+        long sec = Math.max(0, ms / 1000);
+        if (sec >= 3600) return String.format(Locale.UK, "%d:%02d:%02d", sec/3600, sec/60%60, sec%60);
+        return String.format(Locale.UK, "%02d:%02d", sec/60, sec%60);
+    }
+    private void showPlaybackHud() {
+        if (playbackHud != null) {
+            hudShownAt = android.os.SystemClock.uptimeMillis();
+            playbackHud.setVisibility(View.VISIBLE);
+        }
+    }
+    private void updatePlaybackHud() {
+        if (nativePlayer == null || playbackHud == null) return;
+        long pos = Math.max(0, nativePlayer.getCurrentPosition());
+        long duration = nativePlayer.getDuration();
+        if (duration > 0) {
+            playbackProgress.setProgress((int)Math.min(1000, pos * 1000.0 / duration));
+            long remaining = Math.max(0, duration-pos);
+            String end = new java.text.SimpleDateFormat("HH:mm", Locale.UK).format(new java.util.Date(System.currentTimeMillis()+remaining));
+            playbackTimes.setText(clock(pos)+" / "+clock(duration)+"  •  Left "+clock(remaining)+"  •  Ends "+end);
+        } else {
+            playbackTimes.setText(clock(pos)+" / --:--");
+        }
+        if (nativePlayer.isPlaying() && android.os.SystemClock.uptimeMillis()-hudShownAt>5000)
+            playbackHud.setVisibility(View.GONE);
+    }
     private void js(String event, String argument) {
         if (web == null) return;
         web.evaluateJavascript("window.__humaxVideoEvent && window.__humaxVideoEvent('" +
@@ -147,6 +182,7 @@ public final class MainActivity extends Activity {
             nativePlayer.release();
             nativePlayer = null;
         }
+        if (playbackHud != null) { layout.removeView(playbackHud); playbackHud = null; }
         if (nativeView != null) {
             layout.removeView(nativeView);
             nativeView = null;
@@ -170,6 +206,21 @@ public final class MainActivity extends Activity {
                 nativeView.setFocusableInTouchMode(false);
                 nativeView.setClickable(false);
                 layout.addView(nativeView, new FrameLayout.LayoutParams(-1, -1));
+
+                playbackHud = new LinearLayout(MainActivity.this);
+                playbackHud.setOrientation(LinearLayout.VERTICAL);
+                playbackHud.setBackgroundColor(0xcc10141d);
+                playbackHud.setPadding(32, 16, 32, 24);
+                playbackTimes = new TextView(MainActivity.this);
+                playbackTimes.setTextColor(Color.WHITE);
+                playbackTimes.setTextSize(17);
+                playbackTimes.setText("00:00 / --:--");
+                playbackHud.addView(playbackTimes);
+                playbackProgress = new ProgressBar(MainActivity.this, null, android.R.attr.progressBarStyleHorizontal);
+                playbackProgress.setMax(1000);
+                playbackHud.addView(playbackProgress, new LinearLayout.LayoutParams(-1, 12));
+                layout.addView(playbackHud, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+                showPlaybackHud();
                 // Keep the diagnostic overlay above video during testing.
                 diagnostics.bringToFront();
                 web.requestFocus();
@@ -233,6 +284,7 @@ public final class MainActivity extends Activity {
                 // The native player overlays the HTML controls. Handle playback keys
                 // here so pause/seek work even when WebView cannot show the OSD.
                 if (nativePlayer != null && nativePlayer.getPlaybackState() != Player.STATE_IDLE) {
+                    showPlaybackHud();
                     switch (a) {
                         case "playpause":
                         case "enter":
