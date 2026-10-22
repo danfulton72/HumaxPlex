@@ -30,6 +30,9 @@ public final class MainActivity extends Activity {
     private FrameLayout layout;
     private PlayerView nativeView;
     private ExoPlayer nativePlayer;
+    private int imageFailures = 0;
+    private String lastImageIssue = "none";
+    private String videoStats = "video idle";
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -77,11 +80,21 @@ public final class MainActivity extends Activity {
                 web.evaluateJavascript(js, result -> diagnostics.setText("HumaxPlex DIAG-4 | native " + width + "x" + height + " density " + density + "\\nJS " + result));
             }
         }, 3000);
-        diagnostics.postDelayed(() -> diagnostics.setVisibility(View.GONE), 8000);
+        // Diagnostics remain visible during this test.
         web.requestFocus();
         updateHandler.post(new Runnable() {
             @Override public void run() {
-                if (nativePlayer != null) js("time", String.valueOf(nativePlayer.getCurrentPosition()));
+                if (nativePlayer != null) {
+                    js("time", String.valueOf(nativePlayer.getCurrentPosition()));
+                    androidx.media3.common.Format fmt = nativePlayer.getVideoFormat();
+                    androidx.media3.decoder.DecoderCounters counts = nativePlayer.getVideoDecoderCounters();
+                    videoStats = fmt == null ? "video initializing" :
+                        "video " + fmt.width + "x" + fmt.height + " fps=" + fmt.frameRate +
+                        " dropped=" + (counts == null ? "?" : counts.droppedBufferCount);
+                }
+                if (diagnostics != null) diagnostics.setText(
+                    "HumaxPlex DIAG-6 | Images failed: " + imageFailures +
+                    " last: " + lastImageIssue + "\\n" + videoStats);
                 if (web != null) updateHandler.postDelayed(this, 500);
             }
         });
@@ -102,6 +115,12 @@ public final class MainActivity extends Activity {
         }
     }
     public final class NativeVideoBridge {
+        @JavascriptInterface public void imageFailed(String path) {
+            runOnUiThread(() -> {
+                imageFailures++;
+                lastImageIssue = path.length() > 85 ? path.substring(0, 85) : path;
+            });
+        }
         @JavascriptInterface public void open(String url) {
             runOnUiThread(() -> {
                 closeVideo();
