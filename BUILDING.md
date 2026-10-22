@@ -19,3 +19,7 @@ Copy the APK onto a USB stick, open it through the device's allowed APK installe
 ## Known limitations
 
 The original UI is loaded into an Android WebView. Plex playback may require native Media3/ExoPlayer for reliable HLS; CORS, remote-control keys, search keyboard, and transcoding must be tested on the FVP-4KGTR. Never treat a successful Gradle build as proof of playback compatibility. Please capture `adb logcat` (only when ADB is already enabled) and describe which UI or playback step fails.
+
+## Diagnostic build (DIAG-4)
+
+Older GitHub Actions builds are signed with different ephemeral debug keys, so Android may refuse an in-place upgrade. **Uninstall the old HumaxPlex app before installing the latest APK** (this clears its app data and Plex login). A successful install displays a black `HumaxPlex DIAG-4` strip at the upper-left containing native display size and reported JavaScript viewport dimensions. Photograph that strip and the screen so scaling can be diagnosed without guessing. This is a temporary diagnostic overlay, not the final UI.
