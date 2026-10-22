@@ -34,4 +34,30 @@ edit("js/plex/client.js", "export const PRODUCT = 'SamSUCKS';", "export const PR
 edit("js/screens/player.js",
      "  container: { mp4: 1, m4v: 1, mov: 1, mkv: 1, webm: 1, ts: 1, mpegts: 1, avi: 1 },\n  video: { h264: 1, hevc: 1, vp9: 1, av1: 1, mpeg4: 1, mpeg2video: 1, vc1: 1 },\n  audio: { aac: 1, ac3: 1, eac3: 1, mp3: 1, mp2: 1, flac: 1, opus: 1, vorbis: 1, pcm: 1 },".replace("\\n","\n"),
      "  container: { mp4: 1, m4v: 1 },\n  video: { h264: 1 },\n  audio: { aac: 1, mp3: 1 },".replace("\\n","\n"))
+
+old = """function fitWindow() {
+  const root = document.documentElement;
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  root.style.position = 'relative'; // so the margins below move #app too
+  root.style.zoom = s;
+  root.style.marginLeft = Math.max(0, (innerWidth - 1920 * s) / 2 / s) + 'px';
+  root.style.marginTop = Math.max(0, (innerHeight - 1080 * s) / 2 / s) + 'px';
+}"""
+new = """function fitWindow() {
+  const root = document.documentElement;
+  const body = document.body;
+  const w = window.innerWidth, h = window.innerHeight;
+  const scale = Math.min(w / 1920, h / 1080);
+  root.style.zoom = '1';
+  root.style.width = w + 'px';
+  root.style.height = h + 'px';
+  root.style.position = 'static';
+  root.style.margin = '0';
+  body.style.width = '1920px';
+  body.style.height = '1080px';
+  body.style.transformOrigin = 'top left';
+  body.style.transform = 'translate(' + ((w - 1920 * scale) / 2) + 'px,' + ((h - 1080 * scale) / 2) + 'px) scale(' + scale + ')';
+}"""
+edit("js/app.js", old, new)
+
 print("Prepared HumaxPlex app assets at", dest)
