@@ -267,6 +267,60 @@ public final class MainActivity extends Activity {
         }
         @JavascriptInterface public void close() { runOnUiThread(() -> closeVideo()); }
     }
+
+    private void showTrackMenu() {
+        if (nativePlayer == null) return;
+        new AlertDialog.Builder(this).setTitle("Playback settings")
+            .setItems(new String[]{"Audio track", "Subtitles", "Video information"}, (d, choice) -> {
+                if (choice == 0) chooseTracks(C.TRACK_TYPE_AUDIO);
+                if (choice == 1) chooseTracks(C.TRACK_TYPE_TEXT);
+                if (choice == 2) {
+                    androidx.media3.common.Format f = nativePlayer.getVideoFormat();
+                    String info = f == null ? "Not available" : f.width + "x" + f.height +
+                        " / " + f.sampleMimeType + " / " + f.frameRate + " fps";
+                    new AlertDialog.Builder(this).setTitle("Video information").setMessage(info)
+                        .setPositiveButton("OK", null).show();
+                }
+            }).setNegativeButton("Cancel", null).show();
+    }
+    private void chooseTracks(int type) {
+        if (nativePlayer == null) return;
+        ArrayList<String> labels = new ArrayList<>();
+        ArrayList<Tracks.Group> groups = new ArrayList<>();
+        ArrayList<Integer> indices = new ArrayList<>();
+        if (type == C.TRACK_TYPE_TEXT) labels.add("Off");
+        for (Tracks.Group group : nativePlayer.getCurrentTracks().getGroups()) {
+            if (group.getType() != type) continue;
+            for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSupported(i)) continue;
+                androidx.media3.common.Format fmt = group.getTrackFormat(i);
+                labels.add((fmt.language == null ? "Unknown" : fmt.language) +
+                    " - " + (fmt.label == null ? String.valueOf(fmt.sampleMimeType) : fmt.label));
+                groups.add(group);
+                indices.add(i);
+            }
+        }
+        if (labels.isEmpty()) {
+            new AlertDialog.Builder(this).setMessage("No selectable tracks")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle(type == C.TRACK_TYPE_AUDIO ? "Audio tracks" : "Subtitles")
+            .setItems(labels.toArray(new String[0]), (dialog, selected) -> {
+                TrackSelectionParameters.Builder b = nativePlayer.getTrackSelectionParameters().buildUpon();
+                if (type == C.TRACK_TYPE_TEXT && selected == 0) {
+                    b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true);
+                } else {
+                    int n = selected - (type == C.TRACK_TYPE_TEXT ? 1 : 0);
+                    b.setTrackTypeDisabled(type, false);
+                    b.clearOverridesOfType(type);
+                    b.addOverride(new TrackSelectionOverride(groups.get(n).getMediaTrackGroup(), indices.get(n)));
+                }
+                nativePlayer.setTrackSelectionParameters(b.build());
+                showPlaybackHud();
+            }).setNegativeButton("Back", (d, w) -> showTrackMenu()).show();
+    }
     private String action(int code) {
         switch(code) {
             case KeyEvent.KEYCODE_DPAD_LEFT: return "left";
