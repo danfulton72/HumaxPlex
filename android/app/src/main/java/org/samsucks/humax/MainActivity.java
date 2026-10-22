@@ -77,6 +77,7 @@ public final class MainActivity extends Activity {
                 web.evaluateJavascript(js, result -> diagnostics.setText("HumaxPlex DIAG-4 | native " + width + "x" + height + " density " + density + "\\nJS " + result));
             }
         }, 3000);
+        diagnostics.postDelayed(() -> diagnostics.setVisibility(View.GONE), 8000);
         web.requestFocus();
         updateHandler.post(new Runnable() {
             @Override public void run() {
