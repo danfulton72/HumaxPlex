@@ -14,6 +14,12 @@ import android.view.Gravity;
 import android.webkit.JavascriptInterface;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.Player;
+import androidx.media3.common.C;
+import androidx.media3.common.Tracks;
+import androidx.media3.common.TrackSelectionOverride;
+import androidx.media3.common.TrackSelectionParameters;
+import android.app.AlertDialog;
+import java.util.ArrayList;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
@@ -124,7 +130,7 @@ public final class MainActivity extends Activity {
                 web.evaluateJavascript(js, result -> diagnostics.setText("HumaxPlex DIAG-4 | native " + width + "x" + height + " density " + density + "\\nJS " + result));
             }
         }, 3000);
-        // Diagnostics remain visible during this test.
+        diagnostics.setVisibility(View.GONE);
         web.requestFocus();
         updateHandler.post(new Runnable() {
             @Override public void run() {
@@ -138,7 +144,7 @@ public final class MainActivity extends Activity {
                         " codec=" + fmt.sampleMimeType + " bitrate=" + fmt.bitrate +
                         " dropped=" + (counts == null ? "?" : counts.droppedBufferCount);
                 }
-                if (diagnostics != null) diagnostics.setText(
+                if (diagnostics != null && diagnostics.getVisibility() == View.VISIBLE) diagnostics.setText(
                     "HumaxPlex DIAG-6 | Images failed: " + imageFailures +
                     " last: " + lastImageIssue + "\\n" + videoStats);
                 if (web != null) updateHandler.postDelayed(this, 500);
@@ -184,6 +190,7 @@ public final class MainActivity extends Activity {
         }
         if (playbackHud != null) { layout.removeView(playbackHud); playbackHud = null; }
         if (nativeView != null) {
+            web.setVisibility(View.VISIBLE);
             layout.removeView(nativeView);
             nativeView = null;
         }
@@ -199,6 +206,8 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 closeVideo();
                 nativePlayer = new ExoPlayer.Builder(MainActivity.this).build();
+                nativePlayer.setTrackSelectionParameters(nativePlayer.getTrackSelectionParameters()
+                    .buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build());
                 nativeView = new PlayerView(MainActivity.this);
                 nativeView.setUseController(false);
                 nativeView.setPlayer(nativePlayer);
@@ -206,6 +215,7 @@ public final class MainActivity extends Activity {
                 nativeView.setFocusableInTouchMode(false);
                 nativeView.setClickable(false);
                 layout.addView(nativeView, new FrameLayout.LayoutParams(-1, -1));
+                web.setVisibility(View.INVISIBLE);
 
                 playbackHud = new LinearLayout(MainActivity.this);
                 playbackHud.setOrientation(LinearLayout.VERTICAL);
@@ -286,6 +296,9 @@ public final class MainActivity extends Activity {
                 if (nativePlayer != null && nativePlayer.getPlaybackState() != Player.STATE_IDLE) {
                     showPlaybackHud();
                     switch (a) {
+                        case "down":
+                            if (event.getRepeatCount() == 0) showTrackMenu();
+                            return true;
                         case "playpause":
                         case "enter":
                             if (event.getRepeatCount() == 0) {
