@@ -99,6 +99,12 @@ edit("js/ui/images.js",
 edit("js/ui/backdrop.js", "    loader.onload = swap;",
      "    loader.onload = swap;\n    loader.onerror = () => { if (typeof HumaxVideo !== 'undefined') HumaxVideo.imageFailed(url.split('?')[0]); };")
 
+# Ignore Plex's previously selected subtitle stream when starting a new item.
+# Media3's subtitle menu can explicitly enable a supported text track later.
+edit("js/screens/player.js",
+     "      subStream = streamsOf(part, 3).find(s => s.selected) || null;",
+     "      subStream = null;")
+
 # Media3 backend delegates HLS/MP4 playback to Android, not Android WebView.
 native_backend = """
 function humaxBackend(container, listener) {
