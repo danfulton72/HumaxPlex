@@ -2,6 +2,10 @@ package org.samsucks.humax;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.graphics.Color;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.WebChromeClient;
@@ -14,6 +18,7 @@ import android.webkit.WebResourceResponse;
 
 public final class MainActivity extends Activity {
     private WebView web;
+    private TextView diagnostics;
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         getWindow().getDecorView().setSystemUiVisibility(5894 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
@@ -21,7 +26,17 @@ public final class MainActivity extends Activity {
         web.setBackgroundColor(0xff0b0d12);
         web.setFocusable(true);
         web.setFocusableInTouchMode(true);
-        setContentView(web);
+        FrameLayout layout = new FrameLayout(this);
+        layout.addView(web, new FrameLayout.LayoutParams(-1, -1));
+        diagnostics = new TextView(this);
+        diagnostics.setText("HumaxPlex DIAG-4 | WebView initializing");
+        diagnostics.setTextSize(13);
+        diagnostics.setTextColor(Color.WHITE);
+        diagnostics.setBackgroundColor(0xe6000000);
+        diagnostics.setPadding(12, 7, 12, 7);
+        FrameLayout.LayoutParams tag = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT);
+        layout.addView(diagnostics, tag);
+        setContentView(layout);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setUseWideViewPort(true);
@@ -40,6 +55,15 @@ public final class MainActivity extends Activity {
         });
         web.setWebChromeClient(new WebChromeClient());
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
+        web.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (web == null || diagnostics == null) return;
+                final int width = web.getWidth(), height = web.getHeight();
+                final float density = getResources().getDisplayMetrics().density;
+                String js = "(function(){return JSON.stringify({inner:[innerWidth,innerHeight],screen:[screen.width,screen.height],dpr:devicePixelRatio,body:[Math.round(document.body.getBoundingClientRect().width),Math.round(document.body.getBoundingClientRect().height)],transform:document.body.style.transform})})()";
+                web.evaluateJavascript(js, result -> diagnostics.setText("HumaxPlex DIAG-4 | native " + width + "x" + height + " density " + density + "\\nJS " + result));
+            }
+        }, 3000);
         web.requestFocus();
     }
     private String action(int code) {
