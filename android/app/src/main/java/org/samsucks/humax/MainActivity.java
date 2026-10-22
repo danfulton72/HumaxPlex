@@ -229,6 +229,30 @@ public final class MainActivity extends Activity {
         String a = action(event.getKeyCode());
         if (a != null && web != null) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                // The native player overlays the HTML controls. Handle playback keys
+                // here so pause/seek work even when WebView cannot show the OSD.
+                if (nativePlayer != null && nativePlayer.getPlaybackState() != Player.STATE_IDLE) {
+                    switch (a) {
+                        case "playpause":
+                        case "enter":
+                            if (event.getRepeatCount() == 0) {
+                                if (nativePlayer.isPlaying()) nativePlayer.pause();
+                                else nativePlayer.play();
+                            }
+                            return true;
+                        case "play": nativePlayer.play(); return true;
+                        case "pause": nativePlayer.pause(); return true;
+                        case "left": case "rw":
+                            if (event.getRepeatCount() == 0)
+                                nativePlayer.seekTo(Math.max(0, nativePlayer.getCurrentPosition() - 10000));
+                            return true;
+                        case "right": case "ff":
+                            if (event.getRepeatCount() == 0)
+                                nativePlayer.seekTo(Math.min(nativePlayer.getDuration() > 0 ? nativePlayer.getDuration() : Long.MAX_VALUE,
+                                    nativePlayer.getCurrentPosition() + 10000));
+                            return true;
+                    }
+                }
                 web.evaluateJavascript("window.__androidAction && window.__androidAction('" + a + "')", null);
             }
             return true;
