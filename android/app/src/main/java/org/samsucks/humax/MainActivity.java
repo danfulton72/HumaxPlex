@@ -23,6 +23,10 @@ import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.net.Uri;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.InputStream;
 
 public final class MainActivity extends Activity {
     private WebView web;
@@ -65,7 +69,40 @@ public final class MainActivity extends Activity {
             .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
         web.setWebViewClient(new WebViewClientCompat() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                return loader.shouldInterceptRequest(request.getUrl());
+                Uri uri = request.getUrl();
+                if ("appassets.androidplatform.net".equals(uri.getHost()) &&
+                    "/pleximg".equals(uri.getPath())) {
+                    String remote = uri.getQueryParameter("url");
+                    if (remote == null || !(remote.startsWith("http://") || remote.startsWith("https://"))) {
+                        return new WebResourceResponse("text/plain", "UTF-8", 400,
+                            "Bad image URL", java.util.Collections.emptyMap(),
+                            new java.io.ByteArrayInputStream(new byte[0]));
+                    }
+                    try {
+                        HttpURLConnection conn = (HttpURLConnection) new URL(remote).openConnection();
+                        conn.setConnectTimeout(8000);
+                        conn.setReadTimeout(12000);
+                        conn.setInstanceFollowRedirects(true);
+                        int code = conn.getResponseCode();
+                        if (code < 200 || code >= 300) {
+                            android.util.Log.w("HumaxPlex", "Image proxy HTTP " + code);
+                            conn.disconnect();
+                            return new WebResourceResponse("text/plain", "UTF-8", code,
+                                "Image HTTP error", java.util.Collections.emptyMap(),
+                                new java.io.ByteArrayInputStream(new byte[0]));
+                        }
+                        String mime = conn.getContentType();
+                        if (mime != null) mime = mime.split(";")[0];
+                        if (mime == null || !mime.startsWith("image/")) mime = "image/jpeg";
+                        InputStream stream = conn.getInputStream();
+                        return new WebResourceResponse(mime, null, stream);
+                    } catch (Exception ex) {
+                        android.util.Log.w("HumaxPlex", "Image proxy failed: " + ex.getClass().getSimpleName());
+                        return new WebResourceResponse("text/plain", "UTF-8",
+                            new java.io.ByteArrayInputStream(new byte[0]));
+                    }
+                }
+                return loader.shouldInterceptRequest(uri);
             }
         });
         web.setWebChromeClient(new WebChromeClient());
@@ -129,9 +166,12 @@ public final class MainActivity extends Activity {
                 nativeView.setUseController(false);
                 nativeView.setPlayer(nativePlayer);
                 nativeView.setFocusable(false);
+                nativeView.setFocusableInTouchMode(false);
+                nativeView.setClickable(false);
                 layout.addView(nativeView, new FrameLayout.LayoutParams(-1, -1));
                 // Keep the diagnostic overlay above video during testing.
                 diagnostics.bringToFront();
+                web.requestFocus();
                 nativePlayer.addListener(new Player.Listener() {
                     @Override public void onPlaybackStateChanged(int state) {
                         if (state == Player.STATE_READY) js("ready", "null");
@@ -183,6 +223,17 @@ public final class MainActivity extends Activity {
             case KeyEvent.KEYCODE_CHANNEL_DOWN: return "pagedown";
             default: return null;
         }
+    }
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // Route remote keys before the Media3 video view can consume them.
+        String a = action(event.getKeyCode());
+        if (a != null && web != null) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                web.evaluateJavascript("window.__androidAction && window.__androidAction('" + a + "')", null);
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
     }
     @Override public boolean onKeyDown(int code, KeyEvent event) {
         String a = action(code);
