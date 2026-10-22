@@ -89,7 +89,7 @@ edit("js/plex/server.js",
      "    if (!path) return '';",
      """    if (!path) return '';
     if (typeof HumaxVideo !== 'undefined') {
-      return this.url(path);
+      return 'https://appassets.androidplatform.net/pleximg?url=' + encodeURIComponent(this.url(path));
     }""")
 
 # Report image failures to the on-screen diagnostic without logging authentication tokens.
