@@ -87,7 +87,7 @@ public final class MainActivity extends Activity {
                 if (nativePlayer != null) {
                     js("time", String.valueOf(nativePlayer.getCurrentPosition()));
                     androidx.media3.common.Format fmt = nativePlayer.getVideoFormat();
-                    androidx.media3.decoder.DecoderCounters counts = nativePlayer.getVideoDecoderCounters();
+                    androidx.media3.exoplayer.DecoderCounters counts = nativePlayer.getVideoDecoderCounters();
                     videoStats = fmt == null ? "video initializing" :
                         "video " + fmt.width + "x" + fmt.height + " fps=" + fmt.frameRate +
                         " dropped=" + (counts == null ? "?" : counts.droppedBufferCount);
