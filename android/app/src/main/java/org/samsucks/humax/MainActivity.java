@@ -6,6 +6,12 @@ import android.graphics.Color;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.view.Gravity;
+import android.webkit.JavascriptInterface;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.Player;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.PlayerView;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.WebChromeClient;
@@ -19,6 +25,9 @@ import android.webkit.WebResourceResponse;
 public final class MainActivity extends Activity {
     private WebView web;
     private TextView diagnostics;
+    private FrameLayout layout;
+    private PlayerView nativeView;
+    private ExoPlayer nativePlayer;
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         getWindow().getDecorView().setSystemUiVisibility(5894 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
@@ -26,7 +35,7 @@ public final class MainActivity extends Activity {
         web.setBackgroundColor(0xff0b0d12);
         web.setFocusable(true);
         web.setFocusableInTouchMode(true);
-        FrameLayout layout = new FrameLayout(this);
+        layout = new FrameLayout(this);
         layout.addView(web, new FrameLayout.LayoutParams(-1, -1));
         diagnostics = new TextView(this);
         diagnostics.setText("HumaxPlex DIAG-4 | WebView initializing");
@@ -54,6 +63,7 @@ public final class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient());
+        web.addJavascriptInterface(new NativeVideoBridge(), "HumaxVideo");
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
         web.postDelayed(new Runnable() {
             @Override public void run() {
@@ -65,6 +75,66 @@ public final class MainActivity extends Activity {
             }
         }, 3000);
         web.requestFocus();
+    }
+    private void js(String event, String argument) {
+        if (web == null) return;
+        web.evaluateJavascript("window.__humaxVideoEvent && window.__humaxVideoEvent('" +
+            event + "'," + argument + ")", null);
+    }
+    private void closeVideo() {
+        if (nativePlayer != null) {
+            nativePlayer.release();
+            nativePlayer = null;
+        }
+        if (nativeView != null) {
+            layout.removeView(nativeView);
+            nativeView = null;
+        }
+    }
+    public final class NativeVideoBridge {
+        @JavascriptInterface public void open(String url) {
+            runOnUiThread(() -> {
+                closeVideo();
+                nativePlayer = new ExoPlayer.Builder(MainActivity.this).build();
+                nativeView = new PlayerView(MainActivity.this);
+                nativeView.setUseController(false);
+                nativeView.setPlayer(nativePlayer);
+                nativeView.setFocusable(false);
+                layout.addView(nativeView, new FrameLayout.LayoutParams(-1, -1));
+                // Keep the diagnostic overlay above video during testing.
+                diagnostics.bringToFront();
+                nativePlayer.addListener(new Player.Listener() {
+                    @Override public void onPlaybackStateChanged(int state) {
+                        if (state == Player.STATE_READY) js("ready", "null");
+                        else if (state == Player.STATE_ENDED) js("end", "null");
+                        else if (state == Player.STATE_BUFFERING) js("buffer", "true");
+                    }
+                    @Override public void onIsPlayingChanged(boolean playing) {
+                        if (playing) js("buffer", "false");
+                    }
+                    @Override public void onPlayerError(PlaybackException error) {
+                        js("error", org.json.JSONObject.quote(error.getMessage() == null ? "Media3 playback failed" : error.getMessage()));
+                    }
+                });
+                nativePlayer.setMediaItem(MediaItem.fromUri(url));
+                nativePlayer.prepare();
+                nativePlayer.play();
+            });
+        }
+        @JavascriptInterface public void play() {
+            runOnUiThread(() -> { if (nativePlayer != null) nativePlayer.play(); });
+        }
+        @JavascriptInterface public void pause() {
+            runOnUiThread(() -> { if (nativePlayer != null) nativePlayer.pause(); });
+        }
+        @JavascriptInterface public void seek(long milliseconds) {
+            runOnUiThread(() -> { if (nativePlayer != null) nativePlayer.seekTo(milliseconds); });
+        }
+        @JavascriptInterface public long time() {
+            // Position is updated asynchronously via JS timer; see polling below.
+            return nativePlayer == null ? 0 : nativePlayer.getCurrentPosition();
+        }
+        @JavascriptInterface public void close() { runOnUiThread(() -> closeVideo()); }
     }
     private String action(int code) {
         switch(code) {
@@ -98,6 +168,7 @@ public final class MainActivity extends Activity {
         else super.onBackPressed();
     }
     @Override protected void onDestroy() {
+        closeVideo();
         if (web != null) { web.destroy(); web = null; }
         super.onDestroy();
     }
