@@ -92,6 +92,13 @@ edit("js/plex/server.js",
       return this.url(path);
     }""")
 
+# Report image failures to the on-screen diagnostic without logging authentication tokens.
+edit("js/ui/images.js",
+     "console.warn('HumaxPlex image load failed', job.url.split('?')[0]);",
+     "console.warn('HumaxPlex image load failed', job.url.split('?')[0]); if (typeof HumaxVideo !== 'undefined') HumaxVideo.imageFailed(job.url.split('?')[0]);")
+edit("js/ui/backdrop.js", "    loader.onload = swap;",
+     "    loader.onload = swap;\n    loader.onerror = () => { if (typeof HumaxVideo !== 'undefined') HumaxVideo.imageFailed(url.split('?')[0]); };")
+
 # Media3 backend delegates HLS/MP4 playback to Android, not Android WebView.
 native_backend = """
 function humaxBackend(container, listener) {
