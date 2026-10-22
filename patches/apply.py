@@ -63,4 +63,68 @@ new = """function fitWindow() {
 }"""
 edit("js/app.js", old, new)
 
+
+# WebView's Image.decode() can fail or stall on Humax despite normal img.onload.
+# Prefer native image onload/onerror, and show a fallback failure marker in logs.
+edit("js/ui/images.js",
+     """    if (loader.decode) loader.decode().then(() => done(true), () => done(false));
+    else { loader.onload = () => done(true); loader.onerror = () => done(false); }""",
+     """    loader.onload = () => done(true);
+    loader.onerror = () => { console.warn('HumaxPlex image load failed', job.url.split('?')[0]); done(false); };""")
+
+# Media3 backend delegates HLS/MP4 playback to Android, not Android WebView.
+native_backend = """
+function humaxBackend(container, listener) {
+  let currentTime = 0;
+  let currentState = 'NONE';
+  let ready = null;
+  let timer = 0;
+  window.__humaxVideoEvent = (name, value) => {
+    if (name === 'ready') {
+      currentState = 'PLAYING';
+      if (ready) { ready(); ready = null; }
+    } else if (name === 'buffer') {
+      listener.onBuffering(value);
+    } else if (name === 'error') {
+      if (ready) { ready(new Error(value)); ready = null; }
+      else listener.onError(value);
+    } else if (name === 'end') {
+      listener.onEnd();
+    } else if (name === 'time') {
+      currentTime = value;
+      listener.onTime(value);
+    }
+  };
+  return {
+    open(url) { HumaxVideo.open(url); },
+    prepare() {
+      return new Promise((resolve, reject) => {
+        ready = err => err ? reject(err) : resolve();
+      });
+    },
+    play() { currentState = 'PLAYING'; HumaxVideo.play(); },
+    pause() { currentState = 'PAUSED'; HumaxVideo.pause(); },
+    seek(ms) { HumaxVideo.seek(Math.max(0, Math.floor(ms))); return Promise.resolve(); },
+    time() { return currentTime; },
+    state() { return currentState; },
+    tracks() { return { audio: [], text: [] }; },
+    selectAudio() { return false; },
+    selectText() { return false; },
+    suspend() { HumaxVideo.pause(); },
+    restore() {},
+    close() { currentState = 'NONE'; HumaxVideo.close(); },
+    destroy() { HumaxVideo.close(); delete window.__humaxVideoEvent; },
+  };
+}
+
+"""
+f = dest / "js/platform/player.js"
+player_code = f.read_text(encoding="utf-8")
+player_code = native_backend + player_code
+player_code = player_code.replace(
+    "  if (typeof webapis !== 'undefined' && webapis.avplay) return avplayBackend(container, listener);",
+    "  if (typeof HumaxVideo !== 'undefined') return humaxBackend(container, listener);\n  if (typeof webapis !== 'undefined' && webapis.avplay) return avplayBackend(container, listener);"
+)
+f.write_text(player_code, encoding="utf-8")
+
 print("Prepared HumaxPlex app assets at", dest)
