@@ -46,7 +46,7 @@ old = """function fitWindow() {
 new = """function fitWindow() {
   const root = document.documentElement;
   const body = document.body;
-  const w = window.innerWidth, h = window.innerHeight;
+  // Some Android TV WebViews report physical-size innerWidth but logical-size screen.width.\n  // This Humax reports inner=1920x1080, screen=960x540, DPR=2.\n  const w = Math.min(window.innerWidth, window.screen.width || window.innerWidth);\n  const h = Math.min(window.innerHeight, window.screen.height || window.innerHeight);
   const scale = Math.min(w / 1920, h / 1080);
   root.style.zoom = '1';
   root.style.width = w + 'px';
