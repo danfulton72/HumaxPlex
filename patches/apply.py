@@ -81,6 +81,17 @@ edit("js/ui/backdrop.js",
      "    if (loader.decode) loader.decode().then(swap, () => {});\n    else loader.onload = swap;",
      "    loader.onload = swap;")
 
+
+# Android WebView can reject Plex's /photo/:/transcode resources even while
+# its JSON API works. Test original authenticated media artwork URLs directly.
+# Keep upstream's resized transcoder URLs unchanged on Samsung/Tizen.
+edit("js/plex/server.js",
+     "    if (!path) return '';",
+     """    if (!path) return '';
+    if (typeof HumaxVideo !== 'undefined') {
+      return this.url(path);
+    }""")
+
 # Media3 backend delegates HLS/MP4 playback to Android, not Android WebView.
 native_backend = """
 function humaxBackend(container, listener) {
