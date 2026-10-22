@@ -127,6 +127,7 @@ public final class MainActivity extends Activity {
                     androidx.media3.exoplayer.DecoderCounters counts = nativePlayer.getVideoDecoderCounters();
                     videoStats = fmt == null ? "video initializing" :
                         "video " + fmt.width + "x" + fmt.height + " fps=" + fmt.frameRate +
+                        " codec=" + fmt.sampleMimeType + " bitrate=" + fmt.bitrate +
                         " dropped=" + (counts == null ? "?" : counts.droppedBufferCount);
                 }
                 if (diagnostics != null) diagnostics.setText(
