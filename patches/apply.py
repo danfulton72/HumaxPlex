@@ -64,8 +64,8 @@ new = """function fitWindow() {
 edit("js/app.js", old, new)
 
 
-edit("js/ui/images.js", "    const loader = new Image();\\n    loader.src = job.url;",
-     "    const loader = new Image();")
+edit("js/ui/images.js", """    const loader = new Image();
+    loader.src = job.url;""", "    const loader = new Image();")
 
 # WebView's Image.decode() can fail or stall on Humax despite normal img.onload.
 # Prefer native image onload/onerror, and show a fallback failure marker in logs.
