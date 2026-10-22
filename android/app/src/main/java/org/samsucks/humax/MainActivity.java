@@ -29,6 +29,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -188,7 +189,12 @@ public final class MainActivity extends Activity {
         web.evaluateJavascript("window.__humaxVideoEvent && window.__humaxVideoEvent('" +
             event + "'," + argument + ")", null);
     }
+    private void setPlaybackAwake(boolean awake) {
+        if (awake) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
     private void closeVideo() {
+        setPlaybackAwake(false);
         if (nativePlayer != null) {
             nativePlayer.release();
             nativePlayer = null;
@@ -246,9 +252,11 @@ public final class MainActivity extends Activity {
                         else if (state == Player.STATE_BUFFERING) js("buffer", "true");
                     }
                     @Override public void onIsPlayingChanged(boolean playing) {
+                        setPlaybackAwake(playing);
                         if (playing) js("buffer", "false");
                     }
                     @Override public void onPlayerError(PlaybackException error) {
+                        setPlaybackAwake(false);
                         js("error", org.json.JSONObject.quote(error.getMessage() == null ? "Media3 playback failed" : error.getMessage()));
                     }
                 });
