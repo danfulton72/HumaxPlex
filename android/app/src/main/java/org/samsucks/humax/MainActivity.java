@@ -2,6 +2,8 @@ package org.samsucks.humax;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.graphics.Color;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -28,6 +30,7 @@ public final class MainActivity extends Activity {
     private FrameLayout layout;
     private PlayerView nativeView;
     private ExoPlayer nativePlayer;
+    private final Handler updateHandler = new Handler(Looper.getMainLooper());
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         getWindow().getDecorView().setSystemUiVisibility(5894 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
@@ -75,6 +78,12 @@ public final class MainActivity extends Activity {
             }
         }, 3000);
         web.requestFocus();
+        updateHandler.post(new Runnable() {
+            @Override public void run() {
+                if (nativePlayer != null) js("time", String.valueOf(nativePlayer.getCurrentPosition()));
+                if (web != null) updateHandler.postDelayed(this, 500);
+            }
+        });
     }
     private void js(String event, String argument) {
         if (web == null) return;
