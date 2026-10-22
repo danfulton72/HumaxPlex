@@ -76,6 +76,11 @@ edit("js/ui/images.js",
     loader.onerror = () => { console.warn('HumaxPlex image load failed', job.url.split('?')[0]); done(false); };
     loader.src = job.url;""")
 
+# Also fix hero artwork, which independently calls Image.decode().
+edit("js/ui/backdrop.js",
+     "    if (loader.decode) loader.decode().then(swap, () => {});\n    else loader.onload = swap;",
+     "    loader.onload = swap;")
+
 # Media3 backend delegates HLS/MP4 playback to Android, not Android WebView.
 native_backend = """
 function humaxBackend(container, listener) {
