@@ -20,6 +20,10 @@ def edit(path, old, new):
 
 edit("index.html", '<script src="$WEBAPIS/webapis/webapis.js"></script>', "")
 edit("index.html", "<title>SamSUCKS</title>", "<title>HumaxPlex</title>")
+# Android WebView must expose its *actual* CSS viewport, not claim a 1920px viewport.
+# app.js fitWindow() then scales the 1920x1080 UI to the measured device size.
+edit("index.html", 'content="width=1920, height=1080"',
+     'content="width=device-width, initial-scale=1.0, maximum-scale=1.0"')
 edit("js/app.js", "import { isTizen, registerKeys } from './platform/tizen.js';",
      "import { isTizen, registerKeys } from './platform/tizen.js';\nimport { inject } from './input.js';".replace("\\n", "\n"))
 edit("js/app.js", "  registerKeys();", "  registerKeys();\n  window.__androidAction = inject;".replace("\\n", "\n"))
