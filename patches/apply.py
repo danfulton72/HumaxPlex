@@ -455,6 +455,7 @@ live_js = """import { h, setText } from '../util/dom.js';
 import { session } from '../session.js';
 import { useAmbience } from '../ui/backdrop.js';
 import * as router from '../router.js';
+import { identity } from '../plex/client.js';
 
 export function LiveTvScreen() {
   const el = h('div', 'screen settings humax-live');
@@ -665,7 +666,7 @@ export function LiveTvScreen() {
   async function dvrPost(path, params = {}) {
     const url = server.url(path, params);
     const response = await fetch(url, {method:'POST',
-      headers:{Accept:'application/json','X-Plex-Token':server.token}});
+      headers:Object.assign({Accept:'application/json','X-Plex-Token':server.token}, identity())});
     const body = await response.text();
     if (!response.ok) throw new Error('Plex HTTP '+response.status+' '+body.slice(0,140));
     try { const data=JSON.parse(body); return data.MediaContainer || data; }
@@ -680,39 +681,42 @@ export function LiveTvScreen() {
     const e = view === 'guide' ? guideChannel : entries[index];
     if (!e) return;
     const dvr = e.dvrId || String(dvrs[0]?.key || dvrs[0]?.id || '').replace(/^.*:/,'');
-    const channel = e.item?.Media?.[0]?.id || e.channelId || e.channelVcn;
-    if (!/^\\d+$/.test(dvr) || !channel) {
-      setText(details,'No DVR ID or channel identifier; check diagnostics.'); return;
+    const ids = [...new Set([e.channelId,e.channelVcn,e.gridKey,
+      e.item?.Media?.[0]?.channelIdentifier,e.item?.Media?.[0]?.id]
+      .filter(v=>v !== undefined && v !== null && String(v) !== '').map(String))];
+    if (!/^\\d+$/.test(dvr) || !ids.length) {
+      setText(details,'No numeric DVR ID or channel identifier; open diagnostics.'); return;
     }
-    setText(details,'Tuning '+e.channel+'…');
-    try {
-      let data;
+    const results = [];
+    setText(details,'Tuning '+e.channel+' via DVR '+dvr+'…');
+    let data=null;
+    for (const id of ids) {
       try {
         data=await dvrPost('/livetv/dvrs/'+encodeURIComponent(dvr)+
-          '/channels/'+encodeURIComponent(channel)+'/tune');
-      } catch(firstError) {
-        const alternative=e.channelId;
-        if (!alternative || String(alternative) === String(channel)) throw firstError;
-        data=await dvrPost('/livetv/dvrs/'+encodeURIComponent(dvr)+
-          '/channels/'+encodeURIComponent(alternative)+'/tune');
-      }
+          '/channels/'+encodeURIComponent(id)+'/tune');
+        results.push(id+':OK');
+        break;
+      } catch(err) { results.push(id+':'+String(err.message).match(/HTTP \\d+/)?.[0]); }
+    }
+    if (!data) {
+      setText(details,'Tune rejected · DVR '+dvr+' · IDs '+results.join(' | ')+
+        ' · Try official Plex channel again if it also fails.');
+      return;
+    }
+    try {
       let key=playablePath(data);
       if (!key) {
         const sessions=await server.get('/livetv/sessions');
         key=playablePath(sessions);
       }
-      if (!key) {
-        setText(details,'Tuner responded, but no playable stream key. '+JSON.stringify(safeObject(data)).slice(0,450));
+      if (!key || !key.startsWith('/')) {
+        setText(details,'Tune OK ('+results.join(', ')+'), no playable media key. '+JSON.stringify(safeObject(data)).slice(0,400));
         return;
-      }
-      if (!key.startsWith('/')) { setText(details,'Tuned, unsupported playback key: '+key.slice(0,80)); return; }
-      if (typeof HumaxVideo === 'undefined') {
-        setText(details,'Android native video interface missing'); return;
       }
       HumaxVideo.open(server.url(key));
       view='playing';
       setText(info,'Live TV · Back to close');
-    } catch(e) {setText(details,'Tune failed: DVR '+dvr+' / Media channel '+channel+' / '+e.message);}
+    } catch(err) {setText(details,'Tune OK but playback failed: '+err.message);}
   }
   async function recordSelected() {
     const e=entries[index];
