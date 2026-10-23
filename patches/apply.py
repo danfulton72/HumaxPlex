@@ -613,6 +613,17 @@ export function LiveTvScreen() {
     guideChannel = selected;
     await openGuide(0);
   }
+  function formatAiringTime(m) {
+    const raw = m.beginsAt ?? m.startTime ?? m.originallyAvailableAt ?? m.airingStart ?? m.start;
+    if (raw == null || raw === '') return '--:--';
+    let date;
+    if (typeof raw === 'number' || /^\\d{10,13}$/.test(String(raw))) {
+      const num = Number(raw);
+      date = new Date(num < 100000000000 ? num * 1000 : num);
+    } else date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? '--:--' :
+      date.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',hour12:false});
+  }
   async function openGuide(delta) {
     view = 'guide'; dayOffset = Math.max(0, Math.min(7, delta));
     const date = new Date(Date.now()+dayOffset*86400000).toISOString().slice(0,10);
@@ -627,7 +638,7 @@ export function LiveTvScreen() {
         } catch(e) {}
       }
       entries = (mc?.Metadata || mc?.Airing || mc?.Media || []).map(m => ({
-        channel: new Date((m.beginsAt || m.startTime || 0)*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),
+        channel: formatAiringTime(m),
         title: m.title || m.grandparentTitle || 'Programme',
         subtitle: m.summary || m.title || '',
         item:m, gridKey:guideChannel.gridKey, channelId:guideChannel.channelId,
