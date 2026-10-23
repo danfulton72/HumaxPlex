@@ -194,4 +194,116 @@ player_code = player_code.replace(
 )
 f.write_text(player_code, encoding="utf-8")
 
+
+# HumaxPlex branding in the Home header and Settings footer.
+edit("js/screens/home.js",
+     "  h('img', 'brand-wordmark', brandText).src = 'img/wordmark.png';",
+     "  h('div', 'humax-wordmark', brandText).textContent = 'HumaxPlex';")
+edit("js/screens/home.js",
+     "  h('div', 'brand-by', brandText).textContent = 'by rfaile313';",
+     "  h('div', 'brand-by', brandText).textContent = 'Plex for Humax';")
+edit("js/screens/settings.js", "'SamSUCKS ' + VERSION", "'HumaxPlex ' + VERSION")
+
+# Follow the focused season: the pill row can extend arbitrarily far horizontally.
+edit("js/screens/detail.js",
+     "    if (episodes) episodes.row.setActive(zone === 'episodes');",
+     """    if (seasons[seasonIndex] && seasons[seasonIndex].el) {
+      const pill = seasons[seasonIndex].el;
+      const clip = seasonsEl;
+      const left = pill.offsetLeft;
+      const right = left + pill.offsetWidth;
+      const visible = clip.clientWidth || 1600;
+      if (left < clip.scrollLeft + 24) clip.scrollLeft = Math.max(0, left - 24);
+      else if (right > clip.scrollLeft + visible - 24)
+        clip.scrollLeft = Math.max(0, right - visible + 24);
+    }
+    if (episodes) episodes.row.setActive(zone === 'episodes');""")
+
+# A focusable alphabet rail on the right of A-Z libraries. CH up/down still
+# works; press Right from the rightmost grid column, then Up/Down to choose.
+edit("js/screens/library.js",
+     "  const hint = h('div', 'lib-hint', el);",
+     """  const alphaRail = h('div', 'humax-alpha', el);
+  const hint = h('div', 'lib-hint', el);""")
+edit("js/screens/library.js",
+     "  let generation = 0;",
+     """  let generation = 0;
+  let alphaMode = false;
+  let alphaIndex = 0;
+  function paintAlpha() {
+    alphaRail.innerHTML = '';
+    alphaRail.style.display = letters.length ? '' : 'none';
+    letters.forEach((l, i) => {
+      const node = h('div', 'humax-alpha-letter', alphaRail);
+      node.textContent = l.title;
+      node.classList.toggle('focus', alphaMode && i === alphaIndex);
+      node.classList.toggle('selected', grid.index >= l.start &&
+        (i === letters.length - 1 || grid.index < letters[i + 1].start));
+    });
+  }
+  function chooseLetter() {
+    if (!letters[alphaIndex]) return;
+    grid.focusIndex(letters[alphaIndex].start);
+    paintAlpha();
+  }""")
+edit("js/screens/library.js",
+     "    } catch (e) { /* letter jump just won't work */ }",
+     "      paintAlpha();\n    } catch (e) { /* letter jump just won't work */ }")
+edit("js/screens/library.js",
+     "    generation++;",
+     "    generation++;\n    alphaMode = false;\n    alphaRail.style.display = 'none';")
+edit("js/screens/library.js",
+     "    onKey(action) {\n      switch (action) {",
+     """    onKey(action) {
+      if (alphaMode) {
+        if (action === 'up' || action === 'down') {
+          alphaIndex = Math.max(0, Math.min(letters.length - 1, alphaIndex + (action === 'down' ? 1 : -1)));
+          paintAlpha();
+          return true;
+        }
+        if (action === 'enter' || action === 'left') {
+          if (action === 'enter') chooseLetter();
+          alphaMode = false;
+          paintAlpha();
+          return true;
+        }
+        if (action === 'back') { alphaMode = false; paintAlpha(); return true; }
+        return true;
+      }
+      if (action === 'right' && letters.length && grid.index % grid.cols === grid.cols - 1) {
+        alphaMode = true;
+        const i = letters.findIndex((l,k) => grid.index >= l.start &&
+          (k === letters.length - 1 || grid.index < letters[k+1].start));
+        alphaIndex = Math.max(0, i);
+        paintAlpha();
+        return true;
+      }
+      switch (action) {""")
+edit("js/screens/library.js", "        case 'left': grid.move(-1, 0); return true;",
+     "        case 'left': grid.move(-1, 0); paintAlpha(); return true;")
+edit("js/screens/library.js", "        case 'right': grid.move(1, 0); return true;",
+     "        case 'right': grid.move(1, 0); paintAlpha(); return true;")
+
+css = dest / "css/app.css"
+css.write_text(css.read_text(encoding="utf-8") + """
+/* Humax remote navigation fixes */
+.humax-wordmark { color:#f3b234; font: 800 45px/1.05 var(--display); white-space:nowrap; }
+.detail-seasons {
+  display:flex; gap:12px; overflow-x:auto; overflow-y:hidden;
+  max-width:calc(100vw - 180px); width:calc(100vw - 180px);
+  scrollbar-width:none; scroll-behavior:smooth;
+}
+.detail-seasons .pill { flex:0 0 auto; }
+.detail-buttons { overflow-x:auto; max-width:calc(100vw - 180px); scrollbar-width:none; }
+.humax-alpha {
+  position:absolute; right:25px; top:200px; height:830px; width:58px;
+  display:flex; flex-direction:column; justify-content:space-around;
+  align-items:center; border-radius:18px; background:rgba(15,20,29,.82);
+  z-index:18;
+}
+.humax-alpha-letter { font:600 24px var(--body); color:#c3c8d0; padding:0 10px; }
+.humax-alpha-letter.selected { color:#f8be41; }
+.humax-alpha-letter.focus { color:#fff; border-radius:6px; background:#b12b47; }
+""", encoding="utf-8")
+
 print("Prepared HumaxPlex app assets at", dest)
