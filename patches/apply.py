@@ -195,6 +195,116 @@ player_code = player_code.replace(
 f.write_text(player_code, encoding="utf-8")
 
 
+
+# Keep the original authorised Plex Home account token when switching profiles.
+edit("js/session.js",
+     "  token: store.get('token'),",
+     "  token: store.get('token'),\n  rootToken: store.get('rootToken') || store.get('token'),")
+edit("js/session.js",
+     "  session.token = token;\n  session.user =",
+     "  session.token = token;\n  session.rootToken = token;\n  store.set('rootToken', token);\n  session.user =")
+edit("js/session.js",
+     "export function useServer(resource, uri) {",
+     """export function activateHomeUser(token, user) {
+  session.token = token;
+  session.user = { title: user.title || user.username, thumb: user.thumb, uuid: user.uuid };
+  session.server = null;
+  store.set('token', token);
+  store.set('user', session.user);
+  store.set('server', undefined);
+  store.set('homeCache', undefined);
+}
+
+export function useServer(resource, uri) {""")
+edit("js/session.js",
+     "  session.token = null;\n  session.user = null;",
+     "  session.token = null;\n  session.rootToken = null;\n  store.set('rootToken', undefined);\n  session.user = null;")
+
+# Plex Home fast user switching with a separate persistent master token.
+# PIN-protected users prompt for their four-digit Plex Home PIN; no bypass.
+edit("js/screens/settings.js",
+     "import { session, signOut, useServer } from '../session.js';",
+     "import { session, signOut, useServer, activateHomeUser } from '../session.js';")
+edit("js/screens/settings.js",
+     "import { getServers, connect } from '../plex/auth.js';",
+     "import { getServers, connect } from '../plex/auth.js';\nimport { request, identity } from '../plex/client.js';")
+edit("js/screens/settings.js",
+     "  let items = [];",
+     """  let items = [];
+  let choosingUser = false;
+  function userLabel(user) { return user.title || user.username || user.name || 'Plex user'; }
+  async function homeRequest(url, { method = 'GET', pin } = {}) {
+    const response = await fetch('https://plex.tv' + url +
+      (pin ? '?pin=' + encodeURIComponent(pin) : ''), {
+        method,
+        headers: Object.assign({ Accept: 'application/json' }, identity(), {
+          'X-Plex-Token': session.rootToken || session.token,
+        }),
+      });
+    if (!response.ok) throw new Error('Plex user switch failed (HTTP ' + response.status + ')');
+    const body = await response.text();
+    if (body.trim().startsWith('<')) {
+      const root = new DOMParser().parseFromString(body, 'application/xml').documentElement;
+      return {
+        users: Array.from(root.querySelectorAll('user')).map(el => ({
+          id: el.getAttribute('id'), title: el.getAttribute('title') || el.getAttribute('username'),
+          protected: el.getAttribute('protected') === '1',
+        })),
+        authenticationToken: root.getAttribute('authenticationToken'),
+      };
+    }
+    return JSON.parse(body);
+  }
+  async function switchUser() {
+    try {
+      const result = await homeRequest('/api/v2/home/users');
+      const users = Array.isArray(result) ? result : (result.users || result.User || []);
+      if (!users.length) throw new Error('No Plex Home profiles found');
+      choosingUser = true;
+      list.innerHTML = '';
+      items = users.map(u => ({
+        label: userLabel(u), value: u.protected ? 'PIN required' : 'Select',
+        run: async () => {
+          try {
+            let pin = '';
+            if (u.protected || u.hasPassword || u.pin) {
+              pin = window.prompt('Enter Plex Home PIN for ' + userLabel(u)) || '';
+              if (!pin) return;
+              if (!/^\\d{4}$/.test(pin)) throw new Error('Enter a four digit PIN');
+            }
+            const switched = await homeRequest('/api/home/users/' + u.id + '/switch',
+              { method:'POST', pin });
+            const token = switched.authenticationToken || switched.authToken ||
+              (switched.user && switched.user.authToken);
+            if (!token) throw new Error('Plex returned no profile token');
+            activateHomeUser(token, u);
+            const servers = await getServers(token);
+            if (servers.length) {
+              const uri = await connect(servers[0]);
+              useServer(servers[0], uri);
+            }
+            restart();
+          } catch (e) { foot.textContent = e.message; }
+        },
+      }));
+      index = 0;
+      items.forEach(it => {
+        it.el = h('div', 'setting', list);
+        h('span', 'setting-label', it.el).textContent = it.label;
+        h('span', 'setting-value', it.el).textContent = it.value;
+      });
+      render();
+    } catch (e) { foot.textContent = e.message; }
+  }""")
+edit("js/screens/settings.js",
+     "      { label: 'Signed in as', value: session.user ? session.user.title : '—', run: doSignOut, action: 'Sign out' },",
+     """      { label: 'Plex user', value: session.user ? session.user.title : '—', run: switchUser, action: 'Switch user' },
+      { label: 'Unlink Plex account', value: 'Sign out', run: doSignOut },""")
+edit("js/screens/settings.js",
+     "      if (action === 'enter') { items[index].run(); return true; }",
+     """      if (action === 'enter') { items[index].run(); return true; }
+      if (action === 'back' && choosingUser) { choosingUser = false; index = 0; build(); return true; }""")
+
 # HumaxPlex branding in the Home header and Settings footer.
 edit("js/screens/home.js",
      "  h('img', 'brand-wordmark', brandText).src = 'img/wordmark.png';",
