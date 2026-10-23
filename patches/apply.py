@@ -417,6 +417,30 @@ css.write_text(css.read_text(encoding="utf-8") + """
 """, encoding="utf-8")
 
 
+
+# Brand the splash and sign-in UI without disturbing the working Plex QR flow.
+edit("index.html",
+     '<div id="splash"><img src="img/splash.png" alt=""></div>',
+     '<div id="splash"><div class="humax-splash-brand"><span class="humax-pirate">☠</span><strong>Humax<span>Plex</span></strong><small>PLEX FOR HUMAX</small></div></div>')
+edit("js/screens/login.js",
+     "  art.src = 'img/mascot-512.png';",
+     """  art.style.display = 'none';
+  const welcome = h('div', 'humax-login-brand', left);
+  welcome.innerHTML = '<span class="humax-pirate">☠</span><strong>Humax<span>Plex</span></strong><small>PLEX FOR HUMAX</small>';""")
+edit("js/screens/login.js",
+     "  h('h1', 'login-title', panel).textContent = 'Sign in to Plex';",
+     "  h('h1', 'login-title', panel).textContent = 'Link HumaxPlex to Plex';")
+css.write_text(css.read_text(encoding="utf-8") + """
+.humax-splash-brand,.humax-login-brand { display:flex; flex-direction:column; align-items:center;
+ justify-content:center; gap:20px; color:#fff; }
+.humax-splash-brand { position:absolute; inset:0; background:#10141d; }
+.humax-login-brand { width:100%; height:100%; }
+.humax-splash-brand strong,.humax-login-brand strong { font:800 108px/1 var(--display); letter-spacing:-4px; }
+.humax-splash-brand strong span,.humax-login-brand strong span { color:#e6af30; }
+.humax-pirate { color:#edb33a; font:110px/1 sans-serif; }
+.humax-splash-brand small,.humax-login-brand small { font:500 24px var(--body); color:#a9b0bd; letter-spacing:9px; }
+""", encoding="utf-8")
+
 # Initial Plex DVR guide. Server-owned tuners/EPG only, not the Humax tuner.
 live_js = """import { h, setText } from '../util/dom.js';
 import { session } from '../session.js';
