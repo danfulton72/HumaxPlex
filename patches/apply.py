@@ -615,7 +615,7 @@ export function LiveTvScreen() {
   }
   function formatAiringTime(m) {
     const raw = m.beginsAt ?? m.startTime ?? m.originallyAvailableAt ?? m.airingStart ?? m.start;
-    if (raw == null || raw === '') return '--:--';
+    if (raw == null || raw === '' || /^\\d{4}-\\d{2}-\\d{2}$/.test(String(raw))) return '--:--';
     let date;
     if (typeof raw === 'number' || /^\\d{10,13}$/.test(String(raw))) {
       const num = Number(raw);
