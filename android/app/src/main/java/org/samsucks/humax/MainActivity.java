@@ -56,6 +56,8 @@ public final class MainActivity extends Activity {
     private int imageFailures = 0;
     private String lastImageIssue = "none";
     private String videoStats = "video idle";
+    private String playbackError = null;
+    private long playbackStartedAt = 0;
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -171,6 +173,17 @@ public final class MainActivity extends Activity {
     }
     private void updatePlaybackHud() {
         if (nativePlayer == null || playbackHud == null) return;
+        if (playbackError != null) {
+            playbackTimes.setText("Playback failed: " + playbackError);
+            playbackHud.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (nativePlayer.getPlaybackState() == Player.STATE_BUFFERING && playbackStartedAt > 0 &&
+                android.os.SystemClock.uptimeMillis() - playbackStartedAt > 25000) {
+            playbackTimes.setText("Waiting for Plex Live TV stream (25s+) — press Back to exit");
+            playbackHud.setVisibility(View.VISIBLE);
+            return;
+        }
         long pos = Math.max(0, nativePlayer.getCurrentPosition());
         long duration = nativePlayer.getDuration();
         if (duration > 0) {
@@ -216,6 +229,8 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void open(String url) {
             runOnUiThread(() -> {
                 closeVideo();
+                playbackError = null;
+                playbackStartedAt = android.os.SystemClock.uptimeMillis();
                 nativePlayer = new ExoPlayer.Builder(MainActivity.this).build();
                 nativePlayer.setTrackSelectionParameters(nativePlayer.getTrackSelectionParameters()
                     .buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build());
@@ -257,6 +272,9 @@ public final class MainActivity extends Activity {
                     }
                     @Override public void onPlayerError(PlaybackException error) {
                         setPlaybackAwake(false);
+                        playbackError = error.getErrorCodeName() + ": " +
+                            (error.getMessage() == null ? "unknown" : error.getMessage());
+                        showPlaybackHud();
                         js("error", org.json.JSONObject.quote(error.getMessage() == null ? "Media3 playback failed" : error.getMessage()));
                     }
                 });
