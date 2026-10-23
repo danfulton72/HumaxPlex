@@ -528,6 +528,7 @@ export function LiveTvScreen() {
         const mc = reply.value;
         const programs = mc.Metadata || mc.Channel || mc.Directory || [];
         programs.forEach(m => {
+          if (!(m.Media?.length || m.onAir || m.type === 'episode' || m.type === 'movie')) return;
           const channel = m.Media?.[0] || m.Channel?.[0] || m.channel || {};
           const number = channel.channelVcn || channel.channelNumber || m.channelVcn || '';
           const label = channel.channelTitle || m.channelTitle || channel.channelCallSign || m.channelCallSign || channel.title || channel.name || 'Channel';
@@ -554,12 +555,14 @@ export function LiveTvScreen() {
     }
   }
   async function openProgram() {
-    const item = entries[index]?.item;
-    if (!item) return;
-    // Guide metadata does not itself guarantee a playable tuner session.
-    // Display details rather than sending an incorrect URL to Media3.
-    setText(details, (item.title || 'Programme') + ' — ' +
-      (item.summary || 'Live TV playback requires a Plex tuner session and is not yet enabled.'));
+    const selected = entries[index];
+    if (!selected) return;
+    if (!selected.gridKey || !providers.length) {
+      setText(details, 'This programme has no guide channel key; tuning details unavailable.');
+      return;
+    }
+    guideChannel = selected;
+    await openGuide(0);
   }
   async function openGuide(delta) {
     view = 'guide'; dayOffset = Math.max(0, Math.min(7, delta));
