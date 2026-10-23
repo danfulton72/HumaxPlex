@@ -522,17 +522,17 @@ export function LiveTvScreen() {
 (dest / 'js/screens/livetv.js').write_text(live_js, encoding='utf-8')
 edit("js/screens/home.js",
      "import { openItem, playItem, openLibrary, openSearch, openSettings } from '../nav.js';",
-     "import { openItem, playItem, openLibrary, openSearch, openSettings } from '../nav.js';\\nimport { LiveTvScreen } from './livetv.js';".replace('\\n','\\n'))
+     "import { openItem, playItem, openLibrary, openSearch, openSettings } from '../nav.js';\\nimport { LiveTvScreen } from './livetv.js';".replace('\\n', chr(10)))
 edit("js/screens/home.js",
      ".concat([{ label: 'Search', id: 'search', icon: icons.search }, { label: 'Settings', id: 'settings', icon: icons.gear }]);",
      ".concat([{ label: 'Live TV & DVR', id: 'livetv' }, { label: 'Search', id: 'search', icon: icons.search }, { label: 'Settings', id: 'settings', icon: icons.gear }]);")
 edit("js/screens/home.js",
      "    else if (n.id === 'search') openSearch();",
-     "    else if (n.id === 'livetv') router.push(LiveTvScreen());\\n    else if (n.id === 'search') openSearch();".replace('\\n','\\n'))
+     "    else if (n.id === 'livetv') router.push(LiveTvScreen());\\n    else if (n.id === 'search') openSearch();".replace('\\n', chr(10)))
 # Already imported router? Home uses nav functions, so import the router explicitly.
 edit("js/screens/home.js",
      "import * as store from '../util/store.js';",
-     "import * as store from '../util/store.js';\\nimport * as router from '../router.js';".replace('\\n','\\n'))
+     "import * as store from '../util/store.js';\\nimport * as router from '../router.js';".replace('\\n', chr(10)))
 css.write_text(css.read_text(encoding="utf-8") + """
 .humax-live-status { position:absolute; top:210px; left:160px; right:120px; color:#c3cbd5; font:24px var(--body); }
 .humax-live-list { position:absolute; top:300px; left:155px; width:1470px; height:650px; overflow-y:auto; scrollbar-width:none; }
