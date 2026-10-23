@@ -556,9 +556,21 @@ export function LiveTvScreen() {
       }
       const replies = await Promise.allSettled(urls.map(url => server.get(url)));
       debugResponses = replies.map((r,i)=>({name:urls[i],data:r.status === 'fulfilled' ? {keys:Object.keys(r.value),sample:safeObject((r.value.Metadata || r.value.Channel || r.value.Directory || [])[0] || r.value)} : {error:String(r.reason?.message || 'request failed').slice(0,120)}}));
+      const lineup = new Map();
+      replies.forEach((reply,i) => {
+        if (reply.status !== 'fulfilled' || !urls[i].includes('/lineups/dvr/channels')) return;
+        for (const c of reply.value.Channel || []) {
+          const key = c.gridKey || c.id;
+          if (key == null) continue;
+          for (const k of [c.id, c.gridKey, c.channelIdentifier, c.channelVcn]) {
+            if (k != null) lineup.set(String(k), String(key));
+          }
+        }
+      });
       const uniq = new Set();
       entries = [];
-      replies.forEach(reply => {
+      replies.forEach((reply,ri) => {
+        if (!urls[ri].includes('/watchnow/all')) return;
         if (reply.status !== 'fulfilled') return;
         const mc = reply.value;
         const programs = mc.Metadata || mc.Channel || mc.Directory || [];
@@ -573,7 +585,9 @@ export function LiveTvScreen() {
           if (uniq.has(unique)) return;
           uniq.add(unique);
           entries.push({channel: (number ? number + '  ' : '') + label,
-            title, subtitle: m.summary || m.grandparentTitle || title, item: m,\n            gridKey: channel.gridKey, channelId: channel.channelIdentifier, channelVcn: channel.channelVcn });
+            title, subtitle: m.summary || m.grandparentTitle || title, item: m,\n            gridKey: channel.gridKey || lineup.get(String(channel.channelIdentifier || channel.channelVcn || '')),
+            channelId: channel.channelIdentifier, channelVcn: channel.channelVcn,
+            dvrId: String(dvrs[0]?.key || dvrs[0]?.id || '').replace(/^.*:/,'') });
         });
       });
       if (!alive) return;
@@ -593,7 +607,7 @@ export function LiveTvScreen() {
     const selected = entries[index];
     if (!selected) return;
     if (!selected.gridKey || !providers.length) {
-      setText(details, 'This programme has no guide channel key; tuning details unavailable.');
+      setText(details, 'Channel lineup did not provide a matching guide key. Open diagnostics for details.');
       return;
     }
     guideChannel = selected;
