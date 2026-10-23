@@ -662,11 +662,76 @@ export function LiveTvScreen() {
       if (!entries.length) setText(details,'No scheduled recordings.');
     } catch(e) { setText(details,'Unable to load recordings: '+e.message); }
   }
-  function showProgramActions() {
-    const e = entries[index];
+  async function dvrPost(path, params = {}) {
+    const url = server.url(path, params);
+    const response = await fetch(url, {method:'POST',
+      headers:{Accept:'application/json','X-Plex-Token':server.token}});
+    const body = await response.text();
+    if (!response.ok) throw new Error('Plex HTTP '+response.status+' '+body.slice(0,140));
+    try { const data=JSON.parse(body); return data.MediaContainer || data; }
+    catch(e) { return {}; }
+  }
+  function playablePath(data) {
+    const m=(data.Metadata || data.MediaContainer?.Metadata || [])[0] || data;
+    const part=m.Media?.[0]?.Part?.[0];
+    return part?.key || m.key || data.key || '';
+  }
+  async function tuneSelected() {
+    const e = view === 'guide' ? guideChannel : entries[index];
     if (!e) return;
-    setText(details, e.title + ' · ' + (e.subtitle || '') +
-      ' · Recording and tuning require a verified tuner session; controls not yet active.');
+    const dvr = e.dvrId || String(dvrs[0]?.key || dvrs[0]?.id || '').replace(/^.*:/,'');
+    const channel = e.channelId || e.channelVcn;
+    if (!/^\\d+$/.test(dvr) || !channel) {
+      setText(details,'No DVR ID or channel identifier; check diagnostics.'); return;
+    }
+    setText(details,'Tuning '+e.channel+'…');
+    try {
+      const data=await dvrPost('/livetv/dvrs/'+encodeURIComponent(dvr)+
+        '/channels/'+encodeURIComponent(channel)+'/tune');
+      let key=playablePath(data);
+      if (!key) {
+        const sessions=await server.get('/livetv/sessions');
+        key=playablePath(sessions);
+      }
+      if (!key) {
+        setText(details,'Tuner responded, but no playable stream key. '+JSON.stringify(safeObject(data)).slice(0,450));
+        return;
+      }
+      if (!key.startsWith('/')) { setText(details,'Tuned, unsupported playback key: '+key.slice(0,80)); return; }
+      if (typeof HumaxVideo === 'undefined') {
+        setText(details,'Android native video interface missing'); return;
+      }
+      HumaxVideo.open(server.url(key));
+      view='playing';
+      setText(info,'Live TV · Back to close');
+    } catch(e) {setText(details,'Tune failed: '+e.message);}
+  }
+  async function recordSelected() {
+    const e=entries[index];
+    if (!e || !e.item?.guid) {setText(details,'No programme GUID for recording; see diagnostics.'); return;}
+    try {
+      const template=await server.get('/media/subscriptions/template',{guid:e.item.guid});
+      const candidates=template.SubscriptionTemplate || [];
+      if (!candidates.length) {setText(details,'Plex returned no recording template for this programme.'); return;}
+      const t=candidates[0];
+      const target=t.targetLibrarySectionID;
+      const type=t.type;
+      if (!target || type == null) {
+        setText(details,'Recording template missing destination or type: '+JSON.stringify(safeObject(t)).slice(0,300));return;
+      }
+      if (!window.confirm('Schedule Plex DVR recording for '+e.title+'?')) return;
+      const params={targetLibrarySectionID:target,type,
+        'hints[ratingKey]':e.item.ratingKey,'hints[title]':e.title};
+      if (t.params?.mediaProviderID) params['params[mediaProviderID]']=t.params.mediaProviderID;
+      const result=await dvrPost('/media/subscriptions',params);
+      setText(details,'Recording scheduled: '+e.title);
+    } catch(e) {setText(details,'Recording failed: '+e.message);}
+  }
+  function showProgramActions() {
+    const e=entries[index];
+    if (!e)return;
+    setText(details,e.title+' · OK: schedule recording · Play: tune channel');
+    recordSelected();
   }
   load();
   return {
@@ -681,6 +746,11 @@ export function LiveTvScreen() {
       if (action === 'left' && view === 'now') { debugPage=0; showDebug(); return true; }
       if (action === 'up') { index = Math.max(0,index-1); focus(); return true; }
       if (action === 'down') { index = Math.min(entries.length-1,index+1); focus(); return true; }
+      if (action === 'play' || action === 'playpause') { tuneSelected(); return true; }
+      if (view === 'playing' && action === 'back') {
+        if (typeof HumaxVideo !== 'undefined') HumaxVideo.close();
+        view='now'; load(); return true;
+      }
       if (action === 'enter') { if (view === 'now') openProgram(); else if (view === 'guide') showProgramActions(); return true; }\n      if (action === 'right' && view === 'now') { showScheduled(); return true; }\n      if (action === 'left' && view === 'schedule') { view = 'now'; load(); return true; }\n      if (action === 'left' && view === 'guide') { openGuide(dayOffset-1); return true; }\n      if (action === 'right' && view === 'guide') { openGuide(dayOffset+1); return true; }\n      if (action === 'back' && view !== 'now') { view = 'now'; load(); return true; }
       return false;
     },
