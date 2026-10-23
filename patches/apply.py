@@ -464,6 +464,40 @@ export function LiveTvScreen() {
   const list = h('div', 'humax-live-list', el);
   const details = h('div', 'humax-live-detail', el);
   let entries = [], index = 0, busy = false, alive = true;\n  let providers = [], dayOffset = 0, view = 'now', guideChannel = null, dvrs = [];
+  let debugResponses = [], diagnostic = null, debugPage = 0;
+  const allowed = /^(type|title|grandparentTitle|channelTitle|channelCallSign|channelName|channelIdentifier|channelVcn|channelNumber|gridKey|guideKey|ratingKey|key|id|identifier|source|providerIdentifier|epgSource|beginsAt|endsAt|startTime|duration|onAir|Media|Channel|Metadata|Airing|Directory|Dvr|DVR|MediaProvider|Feature|totalSize|size|status|protocol|decision|mediaType|partIndex|index)$/;
+  function safeObject(value, depth = 0) {
+    if (depth > 3) return '[nested]';
+    if (Array.isArray(value)) return value.slice(0, 3).map(v => safeObject(v, depth+1));
+    if (value && typeof value === 'object') {
+      const output = {};
+      Object.keys(value).forEach(k => { if (allowed.test(k)) output[k] = safeObject(value[k], depth+1); });
+      return output;
+    }
+    return typeof value === 'string' ? value.slice(0, 100).replace(/(X-Plex-Token|token|authorization)=[^& ]+/gi,'[redacted]') : value;
+  }
+  function showDebug() {
+    if (!diagnostic) {
+      diagnostic = h('div', 'humax-live-debug', el);
+      const heading = h('div', 'humax-debug-title', diagnostic);
+      heading.textContent = 'Live TV diagnostics — photos: Page Up/Down · Back closes';
+      h('pre', 'humax-debug-content', diagnostic);
+    }
+    view = 'debug'; diagnostic.style.display = '';
+    const selected = entries[index];
+    const cards = [
+      ['Selected programme', selected ? safeObject(selected.item) : 'none'],
+      ['Selected channel', selected ? safeObject({channelTitle:selected.channel, gridKey:selected.gridKey, channelIdentifier:selected.channelId, channelVcn:selected.channelVcn}) : 'none'],
+      ['Plex DVRs', dvrs.map(d=>safeObject(d))],
+      ['EPG providers', providers],
+      ...debugResponses.map((r,i)=>['Endpoint '+(i+1)+' '+r.name, r.data]),
+    ];
+    debugPage = Math.max(0, Math.min(debugPage, cards.length - 1));
+    diagnostic.querySelector('pre').textContent =
+      'PAGE '+(debugPage+1)+' / '+cards.length+'\\n'+cards[debugPage][0]+'\\n\\n'+
+      JSON.stringify(cards[debugPage][1], null, 2).slice(0,3200);
+  }
+
   const server = session.server;
   function focus() {
     Array.from(list.children).forEach((node, i) => node.classList.toggle('focus', i === index));
@@ -521,6 +555,7 @@ export function LiveTvScreen() {
         urls.push(prefix + '/lineups/dvr/channels');
       }
       const replies = await Promise.allSettled(urls.map(url => server.get(url)));
+      debugResponses = replies.map((r,i)=>({name:urls[i],data:r.status === 'fulfilled' ? {keys:Object.keys(r.value),sample:safeObject((r.value.Metadata || r.value.Channel || r.value.Directory || [])[0] || r.value)} : {error:String(r.reason?.message || 'request failed').slice(0,120)}}));
       const uniq = new Set();
       entries = [];
       replies.forEach(reply => {
@@ -548,7 +583,7 @@ export function LiveTvScreen() {
           '/' + replies.length + '. Channel listings unavailable; please report this line.');
         return;
       }
-      setText(info, entries.length + ' programmes on now · OK: channel guide · Right: DVR recordings');
+      setText(info, entries.length + ' programmes on now · OK: guide · Left: diagnostics · Right: recordings');
       render();
     } catch (e) {
       setText(info, 'Live TV unavailable: ' + e.message);
@@ -612,6 +647,13 @@ export function LiveTvScreen() {
   return {
     el, name:'livetv', onShow(){ ambience.restore(); },
     onKey(action) {
+      if (view === 'debug') {
+        if (action === 'pageup' || action === 'up' || action === 'left') { debugPage--; showDebug(); return true; }
+        if (action === 'pagedown' || action === 'down' || action === 'right') { debugPage++; showDebug(); return true; }
+        if (action === 'back' || action === 'enter') { diagnostic.style.display = 'none'; view='now'; return true; }
+        return true;
+      }
+      if (action === 'left' && view === 'now') { debugPage=0; showDebug(); return true; }
       if (action === 'up') { index = Math.max(0,index-1); focus(); return true; }
       if (action === 'down') { index = Math.min(entries.length-1,index+1); focus(); return true; }
       if (action === 'enter') { if (view === 'now') openProgram(); else if (view === 'guide') showProgramActions(); return true; }\n      if (action === 'right' && view === 'now') { showScheduled(); return true; }\n      if (action === 'left' && view === 'schedule') { view = 'now'; load(); return true; }\n      if (action === 'left' && view === 'guide') { openGuide(dayOffset-1); return true; }\n      if (action === 'right' && view === 'guide') { openGuide(dayOffset+1); return true; }\n      if (action === 'back' && view !== 'now') { view = 'now'; load(); return true; }
@@ -646,5 +688,12 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-live-detail { position:absolute; left:160px; bottom:40px; right:160px;
   color:#dbe1e9; font:21px var(--body); max-height:90px; overflow:hidden; }
 """, encoding='utf-8')
+
+css.write_text(css.read_text(encoding="utf-8") + """
+.humax-live-debug { position:absolute; inset:40px 45px; z-index:99; background:#0b1018;
+ border:3px solid #d1a32d; border-radius:18px; padding:35px 42px; color:#f7f8fa; }
+.humax-debug-title { font:700 29px var(--body); margin-bottom:28px; color:#f8bf4e; }
+.humax-debug-content { white-space:pre-wrap; overflow-wrap:anywhere; font:25px/1.34 monospace; }
+""", encoding="utf-8")
 
 print("Prepared HumaxPlex app assets at", dest)
