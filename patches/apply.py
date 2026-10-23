@@ -463,7 +463,7 @@ export function LiveTvScreen() {
   const info = h('div', 'humax-live-status', el);
   const list = h('div', 'humax-live-list', el);
   const details = h('div', 'humax-live-detail', el);
-  let entries = [], index = 0, busy = false, alive = true;
+  let entries = [], index = 0, busy = false, alive = true;\n  let providers = [], dayOffset = 0, view = 'now', guideChannel = null, dvrs = [];
   const server = session.server;
   function focus() {
     Array.from(list.children).forEach((node, i) => node.classList.toggle('focus', i === index));
@@ -485,7 +485,7 @@ export function LiveTvScreen() {
     setText(info, 'Checking Plex DVR and programme guide…');
     try {
       const d = await server.get('/livetv/dvrs');
-      const dvrs = d.Dvr || d.DVR || d.Directory || [];
+      dvrs = d.Dvr || d.DVR || d.Directory || [];
       if (!dvrs.length) {
         setText(info, 'No Plex DVR found. Configure a supported tuner in Plex Media Server → Live TV & DVR.');
         return;
@@ -515,7 +515,7 @@ export function LiveTvScreen() {
           if (match) prefixes.add('/' + match[0]);
         }
       }
-      const urls = [];
+      providers = [...prefixes];\n      const urls = [];
       for (const prefix of prefixes) {
         urls.push(prefix + '/watchnow/all');
         urls.push(prefix + '/lineups/dvr/channels');
@@ -528,16 +528,16 @@ export function LiveTvScreen() {
         const mc = reply.value;
         const programs = mc.Metadata || mc.Channel || mc.Directory || [];
         programs.forEach(m => {
-          const channel = m.Channel?.[0] || m.channel || {};
-          const number = channel.channelIdentifier || channel.channelNumber || m.channelIdentifier || '';
-          const label = channel.title || channel.name || m.channelTitle || 'Channel';
+          const channel = m.Media?.[0] || m.Channel?.[0] || m.channel || {};
+          const number = channel.channelVcn || channel.channelNumber || m.channelVcn || '';
+          const label = channel.channelTitle || m.channelTitle || channel.channelCallSign || m.channelCallSign || channel.title || channel.name || 'Channel';
           const title = m.title || m.grandparentTitle || 'On air';
-          const key = m.key || m.ratingKey;
+          const key = channel.channelIdentifier || m.key || m.ratingKey;
           const unique = number + ':' + key;
           if (uniq.has(unique)) return;
           uniq.add(unique);
           entries.push({channel: (number ? number + '  ' : '') + label,
-            title, subtitle: m.summary || m.grandparentTitle || title, item: m});
+            title, subtitle: m.summary || m.grandparentTitle || title, item: m,\n            gridKey: channel.gridKey, channelId: channel.channelIdentifier, channelVcn: channel.channelVcn });
         });
       });
       if (!alive) return;
@@ -547,13 +547,13 @@ export function LiveTvScreen() {
           '/' + replies.length + '. Channel listings unavailable; please report this line.');
         return;
       }
-      setText(info, entries.length + ' programmes on now · OK for programme information');
+      setText(info, entries.length + ' programmes on now · OK: channel guide · Right: DVR recordings');
       render();
     } catch (e) {
       setText(info, 'Live TV unavailable: ' + e.message);
     }
   }
-  function openProgram() {
+  async function openProgram() {
     const item = entries[index]?.item;
     if (!item) return;
     // Guide metadata does not itself guarantee a playable tuner session.
@@ -561,13 +561,57 @@ export function LiveTvScreen() {
     setText(details, (item.title || 'Programme') + ' — ' +
       (item.summary || 'Live TV playback requires a Plex tuner session and is not yet enabled.'));
   }
+  async function openGuide(delta) {
+    view = 'guide'; dayOffset = Math.max(0, Math.min(7, delta));
+    const date = new Date(Date.now()+dayOffset*86400000).toISOString().slice(0,10);
+    setText(info, 'Guide: ' + guideChannel.channel + ' · '+ date + ' · Left/Right: day · Back: Now');
+    setText(details, 'Loading channel schedule…');
+    try {
+      let mc = null;
+      for (const prefix of providers) {
+        try {
+          mc = await server.get(prefix + '/grid', {channelGridKey:guideChannel.gridKey, date});
+          if ((mc.Metadata || mc.Media || mc.Airing || []).length) break;
+        } catch(e) {}
+      }
+      entries = (mc?.Metadata || mc?.Airing || mc?.Media || []).map(m => ({
+        channel: new Date((m.beginsAt || m.startTime || 0)*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),
+        title: m.title || m.grandparentTitle || 'Programme',
+        subtitle: m.summary || m.title || '',
+        item:m, gridKey:guideChannel.gridKey, channelId:guideChannel.channelId,
+        channelVcn:guideChannel.channelVcn
+      }));
+      index=0; render();
+      if (!entries.length) setText(details, 'No scheduled programmes received for this date.');
+    } catch(e) { setText(details,'Guide request failed: '+e.message); }
+  }
+  async function showScheduled() {
+    view = 'schedule';
+    setText(info, 'DVR recording schedule · Left or Back: Now');
+    try {
+      const mc = await server.get('/media/subscriptions/scheduled');
+      entries = (mc.Metadata || mc.MediaSubscription || mc.Directory || []).map(m => ({
+        channel: m.channelTitle || 'Scheduled',
+        title: m.title || m.grandparentTitle || 'Recording',
+        subtitle: m.summary || m.title || '', item:m
+      }));
+      index=0; render();
+      if (!entries.length) setText(details,'No scheduled recordings.');
+    } catch(e) { setText(details,'Unable to load recordings: '+e.message); }
+  }
+  function showProgramActions() {
+    const e = entries[index];
+    if (!e) return;
+    setText(details, e.title + ' · ' + (e.subtitle || '') +
+      ' · Recording and tuning require a verified tuner session; controls not yet active.');
+  }
   load();
   return {
     el, name:'livetv', onShow(){ ambience.restore(); },
     onKey(action) {
       if (action === 'up') { index = Math.max(0,index-1); focus(); return true; }
       if (action === 'down') { index = Math.min(entries.length-1,index+1); focus(); return true; }
-      if (action === 'enter') { openProgram(); return true; }
+      if (action === 'enter') { if (view === 'now') openProgram(); else if (view === 'guide') showProgramActions(); return true; }\n      if (action === 'right' && view === 'now') { showScheduled(); return true; }\n      if (action === 'left' && view === 'schedule') { view = 'now'; load(); return true; }\n      if (action === 'left' && view === 'guide') { openGuide(dayOffset-1); return true; }\n      if (action === 'right' && view === 'guide') { openGuide(dayOffset+1); return true; }\n      if (action === 'back' && view !== 'now') { view = 'now'; load(); return true; }
       return false;
     },
     destroy(){ alive = false; },
