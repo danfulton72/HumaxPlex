@@ -400,11 +400,11 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-wordmark { color:#f3b234; font: 800 45px/1.05 var(--display); white-space:nowrap; }
 .detail-seasons {
   display:flex; gap:12px; overflow-x:auto; overflow-y:hidden;
-  max-width:calc(100vw - 180px); width:calc(100vw - 180px);
+  max-width:1620px; width:1620px;
   scrollbar-width:none; scroll-behavior:smooth;
 }
 .detail-seasons .pill { flex:0 0 auto; }
-.detail-buttons { overflow-x:auto; max-width:calc(100vw - 180px); scrollbar-width:none; }
+.detail-buttons { overflow-x:auto; max-width:1620px; scrollbar-width:none; }
 .humax-alpha {
   position:absolute; right:25px; top:200px; height:830px; width:58px;
   display:flex; flex-direction:column; justify-content:space-around;
