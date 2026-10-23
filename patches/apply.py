@@ -486,7 +486,7 @@ export function LiveTvScreen() {
     view = 'debug'; diagnostic.style.display = '';
     const selected = entries[index];
     const cards = [
-      ['Selected programme', selected ? safeObject(selected.item) : 'none'],
+      ['Selected programme', selected ? {fields:Object.keys(selected.item || {}), mediaFields:Object.keys(selected.item?.Media?.[0] || {}), channelFields:Object.keys(selected.item?.Channel?.[0] || {}), values:safeObject(selected.item)} : 'none'],
       ['Selected channel', selected ? safeObject({channelTitle:selected.channel, gridKey:selected.gridKey, channelIdentifier:selected.channelId, channelVcn:selected.channelVcn}) : 'none'],
       ['Plex DVRs', dvrs.map(d=>safeObject(d))],
       ['EPG providers', providers],
