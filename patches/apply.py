@@ -416,4 +416,133 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-alpha-letter.focus { color:#fff; border-radius:6px; background:#b12b47; }
 """, encoding="utf-8")
 
+
+# Initial Plex DVR guide. Server-owned tuners/EPG only, not the Humax tuner.
+live_js = """import { h, setText } from '../util/dom.js';
+import { session } from '../session.js';
+import { useAmbience } from '../ui/backdrop.js';
+import * as router from '../router.js';
+
+export function LiveTvScreen() {
+  const el = h('div', 'screen settings humax-live');
+  const ambience = useAmbience();
+  h('h1', 'settings-title', el).textContent = 'Live TV & DVR';
+  const info = h('div', 'humax-live-status', el);
+  const list = h('div', 'humax-live-list', el);
+  const details = h('div', 'humax-live-detail', el);
+  let entries = [], index = 0, busy = false, alive = true;
+  const server = session.server;
+  function focus() {
+    Array.from(list.children).forEach((node, i) => node.classList.toggle('focus', i === index));
+    const e = entries[index];
+    if (e) setText(details, e.subtitle);
+    const node = list.children[index];
+    if (node) node.scrollIntoView({ block:'nearest' });
+  }
+  function render() {
+    list.innerHTML = '';
+    entries.forEach(e => {
+      const row = h('div', 'humax-live-row', list);
+      h('span', 'humax-live-channel', row).textContent = e.channel;
+      h('span', 'humax-live-show', row).textContent = e.title;
+    });
+    focus();
+  }
+  async function load() {
+    setText(info, 'Checking Plex DVR and programme guide…');
+    try {
+      const d = await server.get('/livetv/dvrs');
+      const dvrs = d.Dvr || d.DVR || d.Directory || [];
+      if (!dvrs.length) {
+        setText(info, 'No Plex DVR found. Configure a supported tuner in Plex Media Server → Live TV & DVR.');
+        return;
+      }
+      const sources = [...new Set(dvrs.map(dvr => dvr.epgSource || dvr.providerIdentifier ||
+        (dvr.key || '').match(/tv\\.plex\\.providers\\.epg\\.(cloud|xmltv|custom)/)?.[1])
+        .filter(Boolean))];
+      const urls = [];
+      for (const dvr of dvrs) {
+        const id = dvr.id || dvr.key?.match(/:(\\d+)/)?.[1];
+        if (!id) continue;
+        for (const source of ['cloud','xmltv','custom']) {
+          urls.push('/tv.plex.providers.epg.' + source + ':' + id + '/watchnow/all');
+        }
+      }
+      const replies = await Promise.allSettled(urls.map(url => server.get(url)));
+      const uniq = new Set();
+      entries = [];
+      replies.forEach(reply => {
+        if (reply.status !== 'fulfilled') return;
+        const mc = reply.value;
+        (mc.Metadata || []).forEach(m => {
+          const channel = m.Channel?.[0] || m.channel || {};
+          const number = channel.channelIdentifier || channel.channelNumber || m.channelIdentifier || '';
+          const label = channel.title || channel.name || m.channelTitle || 'Channel';
+          const title = m.title || m.grandparentTitle || 'On air';
+          const key = m.key || m.ratingKey;
+          const unique = number + ':' + key;
+          if (uniq.has(unique)) return;
+          uniq.add(unique);
+          entries.push({channel: (number ? number + '  ' : '') + label,
+            title, subtitle: m.summary || m.grandparentTitle || title, item: m});
+        });
+      });
+      if (!alive) return;
+      if (!entries.length) {
+        setText(info, 'DVR found, but no current listings returned. Guide provider may require a different Plex endpoint.');
+        return;
+      }
+      setText(info, entries.length + ' programmes on now · OK for programme information');
+      render();
+    } catch (e) {
+      setText(info, 'Live TV unavailable: ' + e.message);
+    }
+  }
+  function openProgram() {
+    const item = entries[index]?.item;
+    if (!item) return;
+    // Guide metadata does not itself guarantee a playable tuner session.
+    // Display details rather than sending an incorrect URL to Media3.
+    setText(details, (item.title || 'Programme') + ' — ' +
+      (item.summary || 'Live TV playback requires a Plex tuner session and is not yet enabled.'));
+  }
+  load();
+  return {
+    el, name:'livetv', onShow(){ ambience.restore(); },
+    onKey(action) {
+      if (action === 'up') { index = Math.max(0,index-1); focus(); return true; }
+      if (action === 'down') { index = Math.min(entries.length-1,index+1); focus(); return true; }
+      if (action === 'enter') { openProgram(); return true; }
+      return false;
+    },
+    destroy(){ alive = false; },
+  };
+}
+"""
+(dest / 'js/screens/livetv.js').write_text(live_js, encoding='utf-8')
+edit("js/screens/home.js",
+     "import { openItem, playItem, openLibrary, openSearch, openSettings } from '../nav.js';",
+     "import { openItem, playItem, openLibrary, openSearch, openSettings } from '../nav.js';\\nimport { LiveTvScreen } from './livetv.js';".replace('\\n','\\n'))
+edit("js/screens/home.js",
+     ".concat([{ label: 'Search', id: 'search', icon: icons.search }, { label: 'Settings', id: 'settings', icon: icons.gear }]);",
+     ".concat([{ label: 'Live TV & DVR', id: 'livetv' }, { label: 'Search', id: 'search', icon: icons.search }, { label: 'Settings', id: 'settings', icon: icons.gear }]);")
+edit("js/screens/home.js",
+     "    else if (n.id === 'search') openSearch();",
+     "    else if (n.id === 'livetv') router.push(LiveTvScreen());\\n    else if (n.id === 'search') openSearch();".replace('\\n','\\n'))
+# Already imported router? Home uses nav functions, so import the router explicitly.
+edit("js/screens/home.js",
+     "import * as store from '../util/store.js';",
+     "import * as store from '../util/store.js';\\nimport * as router from '../router.js';".replace('\\n','\\n'))
+css.write_text(css.read_text(encoding="utf-8") + """
+.humax-live-status { position:absolute; top:210px; left:160px; right:120px; color:#c3cbd5; font:24px var(--body); }
+.humax-live-list { position:absolute; top:300px; left:155px; width:1470px; height:650px; overflow-y:auto; scrollbar-width:none; }
+.humax-live-row { display:flex; gap:24px; padding:17px 25px; margin:7px 0;
+  border-radius:14px; background:#242a36; font:26px var(--body); }
+.humax-live-row.focus { background:#ad304a; }
+.humax-live-channel { width:440px; flex-shrink:0; font-weight:700; }
+.humax-live-show { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.humax-live-detail { position:absolute; left:160px; bottom:40px; right:160px;
+  color:#dbe1e9; font:21px var(--body); max-height:90px; overflow:hidden; }
+""", encoding='utf-8')
+
 print("Prepared HumaxPlex app assets at", dest)
