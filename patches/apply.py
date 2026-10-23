@@ -329,6 +329,10 @@ edit("js/screens/detail.js",
     }
     if (episodes) episodes.row.setActive(zone === 'episodes');""")
 
+
+# The guide source has its own provider ID, which need not equal /livetv/dvrs id.
+# Plex's /media/providers exposes the actual tv.plex.providers.epg.* identifiers.
+# Ask for both the watch-now listings and configured-channel lineup.
 # A focusable alphabet rail on the right of A-Z libraries. CH up/down still
 # works; press Right from the rightmost grid column, then Up/Down to choose.
 edit("js/screens/library.js",
@@ -481,16 +485,35 @@ export function LiveTvScreen() {
         setText(info, 'No Plex DVR found. Configure a supported tuner in Plex Media Server → Live TV & DVR.');
         return;
       }
-      const sources = [...new Set(dvrs.map(dvr => dvr.epgSource || dvr.providerIdentifier ||
-        (dvr.key || '').match(/tv\\.plex\\.providers\\.epg\\.(cloud|xmltv|custom)/)?.[1])
-        .filter(Boolean))];
-      const urls = [];
+      const prefixes = new Set();
+      try {
+        const providers = await server.get('/media/providers');
+        const all = providers.MediaProvider || providers.Directory || [];
+        const walk = obj => {
+          if (!obj || typeof obj !== 'object') return;
+          for (const field of ['identifier','id','key']) {
+            const value = String(obj[field] || '');
+            const match = value.match(/tv\\.plex\\.providers\\.epg\\.(?:cloud|xmltv|custom):\\d+/);
+            if (match) prefixes.add('/' + match[0]);
+          }
+          for (const [key,value] of Object.entries(obj)) {
+            if (key === 'Feature' || key === 'Directory' || key === 'MediaProvider' || key === 'Pivot') {
+              for (const child of Array.isArray(value) ? value : []) walk(child);
+            }
+          }
+        };
+        all.forEach(walk);
+      } catch (e) { console.warn('Plex provider discovery:', e.message); }
       for (const dvr of dvrs) {
-        const id = dvr.id || dvr.key?.match(/:(\\d+)/)?.[1];
-        if (!id) continue;
-        for (const source of ['cloud','xmltv','custom']) {
-          urls.push('/tv.plex.providers.epg.' + source + ':' + id + '/watchnow/all');
+        for (const field of ['key','identifier','providerIdentifier']) {
+          const match = String(dvr[field] || '').match(/tv\\.plex\\.providers\\.epg\\.(?:cloud|xmltv|custom):\\d+/);
+          if (match) prefixes.add('/' + match[0]);
         }
+      }
+      const urls = [];
+      for (const prefix of prefixes) {
+        urls.push(prefix + '/watchnow/all');
+        urls.push(prefix + '/lineups/dvr/channels');
       }
       const replies = await Promise.allSettled(urls.map(url => server.get(url)));
       const uniq = new Set();
@@ -498,7 +521,8 @@ export function LiveTvScreen() {
       replies.forEach(reply => {
         if (reply.status !== 'fulfilled') return;
         const mc = reply.value;
-        (mc.Metadata || []).forEach(m => {
+        const programs = mc.Metadata || mc.Channel || mc.Directory || [];
+        programs.forEach(m => {
           const channel = m.Channel?.[0] || m.channel || {};
           const number = channel.channelIdentifier || channel.channelNumber || m.channelIdentifier || '';
           const label = channel.title || channel.name || m.channelTitle || 'Channel';
@@ -513,7 +537,9 @@ export function LiveTvScreen() {
       });
       if (!alive) return;
       if (!entries.length) {
-        setText(info, 'DVR found, but no current listings returned. Guide provider may require a different Plex endpoint.');
+        setText(info, 'DVR found. EPG providers: ' + prefixes.size +
+          ' · Successful guide requests: ' + replies.filter(r => r.status === 'fulfilled').length +
+          '/' + replies.length + '. Channel listings unavailable; please report this line.');
         return;
       }
       setText(info, entries.length + ' programmes on now · OK for programme information');
