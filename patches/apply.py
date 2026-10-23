@@ -614,7 +614,7 @@ export function LiveTvScreen() {
     await openGuide(0);
   }
   function formatAiringTime(m) {
-    const raw = m.beginsAt ?? m.startTime ?? m.originallyAvailableAt ?? m.airingStart ?? m.start;
+    const raw = m.Media?.[0]?.beginsAt ?? m.beginsAt ?? m.Media?.[0]?.startTime ?? m.startTime ?? m.airingStart ?? m.start;
     if (raw == null || raw === '' || /^\\d{4}-\\d{2}-\\d{2}$/.test(String(raw))) return '--:--';
     let date;
     if (typeof raw === 'number' || /^\\d{10,13}$/.test(String(raw))) {
@@ -680,7 +680,7 @@ export function LiveTvScreen() {
     const e = view === 'guide' ? guideChannel : entries[index];
     if (!e) return;
     const dvr = e.dvrId || String(dvrs[0]?.key || dvrs[0]?.id || '').replace(/^.*:/,'');
-    const channel = e.channelId || e.channelVcn;
+    const channel = e.item?.Media?.[0]?.id || e.channelId || e.channelVcn;
     if (!/^\\d+$/.test(dvr) || !channel) {
       setText(details,'No DVR ID or channel identifier; check diagnostics.'); return;
     }
@@ -704,7 +704,7 @@ export function LiveTvScreen() {
       HumaxVideo.open(server.url(key));
       view='playing';
       setText(info,'Live TV · Back to close');
-    } catch(e) {setText(details,'Tune failed: '+e.message);}
+    } catch(e) {setText(details,'Tune failed: DVR '+dvr+' / Media channel '+channel+' / '+e.message);}
   }
   async function recordSelected() {
     const e=entries[index];
