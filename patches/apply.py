@@ -713,9 +713,28 @@ export function LiveTvScreen() {
         setText(details,'Tune OK ('+results.join(', ')+'), no playable media key. '+JSON.stringify(safeObject(data)).slice(0,400));
         return;
       }
-      HumaxVideo.open(server.url(key));
+      let playUrl;
+      if (key.startsWith('/livetv/sessions/')) {
+        const liveSessionPath = key.split('?')[0];
+        const playbackSession = 'humax-live-' + Date.now();
+        playUrl = server.url('/video/:/transcode/universal/start.m3u8', {
+          path:liveSessionPath, session:playbackSession,
+          protocol:'hls', mediaIndex:0, partIndex:0,
+          directPlay:0, directStream:0, directStreamAudio:1,
+          fastSeek:1, videoQuality:100, videoResolution:'1920x1080',
+          maxVideoBitrate:12000, subtitles:'none',
+          audioBoost:100, location:'lan'
+        });
+      } else if (/\\.m3u8(?:\\?|$)/i.test(key)) {
+        playUrl=server.url(key);
+      } else {
+        setText(details,'Tune OK, but stream path is not a live session or HLS playlist. Type: '+
+          key.split('?')[0].slice(0,110));
+        return;
+      }
+      HumaxVideo.open(playUrl);
       view='playing';
-      setText(info,'Live TV · Back to close');
+      setText(info,'Live TV · HLS startup · Back to close');
     } catch(err) {setText(details,'Tune OK but playback failed: '+err.message);}
   }
   async function recordSelected() {
