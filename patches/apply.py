@@ -686,8 +686,16 @@ export function LiveTvScreen() {
     }
     setText(details,'Tuning '+e.channel+'…');
     try {
-      const data=await dvrPost('/livetv/dvrs/'+encodeURIComponent(dvr)+
-        '/channels/'+encodeURIComponent(channel)+'/tune');
+      let data;
+      try {
+        data=await dvrPost('/livetv/dvrs/'+encodeURIComponent(dvr)+
+          '/channels/'+encodeURIComponent(channel)+'/tune');
+      } catch(firstError) {
+        const alternative=e.channelId;
+        if (!alternative || String(alternative) === String(channel)) throw firstError;
+        data=await dvrPost('/livetv/dvrs/'+encodeURIComponent(dvr)+
+          '/channels/'+encodeURIComponent(alternative)+'/tune');
+      }
       let key=playablePath(data);
       if (!key) {
         const sessions=await server.get('/livetv/sessions');
