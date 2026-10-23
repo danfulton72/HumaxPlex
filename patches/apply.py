@@ -422,10 +422,15 @@ css.write_text(css.read_text(encoding="utf-8") + """
 
 
 
+# Reuse the launcher pirate-P artwork inside the web-based UI.
+logo_source = Path(__file__).resolve().parents[1] / "android/app/src/main/res/drawable-nodpi/humaxplex_logo.jpg"
+if logo_source.is_file():
+    shutil.copy2(logo_source, dest / "img/humaxplex-logo.jpg")
+
 # Brand the splash and sign-in UI without disturbing the working Plex QR flow.
 edit("index.html",
      '<div id="splash"><img src="img/splash.png" alt=""></div>',
-     '<div id="splash"><div class="humax-splash-brand"><span class="humax-pirate">☠</span><strong>Humax<span>Plex</span></strong><small>PLEX FOR HUMAX</small></div></div>')
+     '<div id="splash"><div class="humax-splash-brand"><img class="humax-pirate-logo" src="img/humaxplex-logo.jpg" alt=""><strong>Humax<span>Plex</span></strong><small>PLEX FOR HUMAX</small></div></div>')
 edit("js/screens/login.js",
      "  art.src = 'img/mascot-512.png';",
      """  art.style.display = 'none';
@@ -441,7 +446,7 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-login-brand { width:100%; height:100%; }
 .humax-splash-brand strong,.humax-login-brand strong { font:800 108px/1 var(--display); letter-spacing:-4px; }
 .humax-splash-brand strong span,.humax-login-brand strong span { color:#e6af30; }
-.humax-pirate { color:#edb33a; font:110px/1 sans-serif; }
+.humax-pirate-logo { width:180px; height:180px; object-fit:contain; border-radius:26px; }
 .humax-splash-brand small,.humax-login-brand small { font:500 24px var(--body); color:#a9b0bd; letter-spacing:9px; }
 """, encoding="utf-8")
 
