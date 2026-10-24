@@ -24,7 +24,8 @@ const SLOT = 30 * 60000;
 const HOUR = 3600000;
 const DAY = 86400000;
 const GUIDE_TTL = 15 * 60000;
-const GRID_HINT = 'OK watch · ● record · Green recordings · Yellow day guide · Blue diagnostics';
+const SPAN = 2 * HOUR;          // guide shows two hours at a time
+const ROWS = 7;                 // channels visible at once
 
 // ---- time helpers (pure; exported for tests) --------------------------------
 
@@ -91,7 +92,6 @@ export function LiveTvScreen() {
   const details = h('div', 'humax-live-detail', el);
   const server = session.server;
   const guideCache = sharedGuideCache;
-  const slotsVisible = 5;
 
   let alive = true;
   let view = 'loading';           // loading | grid | guide | schedule | debug | tune-debug | playing
@@ -99,7 +99,10 @@ export function LiveTvScreen() {
   let entries = [], index = 0;    // list views (day guide, schedule)
   let providers = [], dvrs = [], dayOffset = 0, guideChannel = null;
   let debugResponses = [], diagnostic = null, debugPage = 0;
-  let channelRows = [], gridIndex = 0, gridSlot = 0, gridBase = 0;
+  // Guide: gridIndex = selected channel, gridTop = first visible row,
+  // focusTime = the cursor's moment in time, windowStart = left edge of the timeline.
+  let channelRows = [], gridIndex = 0, gridTop = 0, focusTime = 0, windowStart = 0;
+  let scheduledGuids = new Set(), gridEl = null, g = {}, sayTimer = 0, clockTimer = 0;
   // Playback / zapping
   let playingRow = null, lastRow = null, zapTarget = null, zapTimer = 0, tuneSeq = 0;
   let plexPlaybackSession = '';
@@ -151,11 +154,11 @@ export function LiveTvScreen() {
   // the cursor.
   async function fillGrid() {
     const token = ++fillToken;
-    const start = gridBase + gridSlot * SLOT, end = start + slotsVisible * SLOT;
+    const start = windowStart, end = windowStart + SPAN;
     const dates = [...new Set([localDate(start - 2 * HOUR), localDate(start), localDate(end)])];
     const rows = channelRows;
-    const ordered = rows.slice(gridIndex, gridIndex + 12)
-      .concat(rows.slice(0, gridIndex), rows.slice(gridIndex + 12));
+    const ordered = rows.slice(gridTop, gridTop + ROWS)
+      .concat(rows.slice(0, gridTop), rows.slice(gridTop + ROWS));
     const jobs = [];
     for (const row of ordered) if (row?.gridKey) for (const date of dates) jobs.push({ row, date });
     let next = 0;
@@ -175,70 +178,270 @@ export function LiveTvScreen() {
 
   // ---- grid -----------------------------------------------------------------
 
+  const slotFloor = t => Math.floor(t / SLOT) * SLOT;
+  const minFocus = () => slotFloor(Date.now());
+  const maxFocus = () => Date.now() + 7 * DAY;
+  function say(text) {
+    setText(details, text);
+    clearTimeout(sayTimer);
+    if (view === 'grid' && text) sayTimer = setTimeout(() => { if (details._text === String(text)) setText(details, ''); }, 7000);
+  }
+  function isScheduled(m) {
+    return !!m && ((m.guid && scheduledGuids.has(m.guid)) || (m.grandparentGuid && scheduledGuids.has(m.grandparentGuid)));
+  }
+  // Best effort: collect every guid in the DVR schedule so the guide can mark
+  // programmes (and series) that will be recorded.
+  async function loadScheduled() {
+    try {
+      const mc = await server.get('/media/subscriptions/scheduled');
+      const found = new Set();
+      const walk = (o, depth) => {
+        if (!o || typeof o !== 'object' || depth > 8) return;
+        if (Array.isArray(o)) { o.forEach(x => walk(x, depth + 1)); return; }
+        if (typeof o.guid === 'string') found.add(o.guid);
+        for (const v of Object.values(o)) if (v && typeof v === 'object') walk(v, depth + 1);
+      };
+      walk(mc, 0);
+      scheduledGuids = found;
+      if (alive && view === 'grid') renderGrid();
+    } catch (e) { /* no markers */ }
+  }
+  // Programmes overlapping [a, b) on a channel, from whichever cached days hold them.
+  function showsBetween(row, a, b) {
+    if (!row?.gridKey) return [];
+    const seen = new Set(), out = [];
+    for (const date of new Set([localDate(a - DAY), localDate(a), localDate(b)])) {
+      for (const m of cached(date, row)?.shows || []) {
+        const bd = airingBounds(m);
+        if (!Number.isFinite(bd.start) || bd.end <= a || bd.start >= b) continue;
+        const k = bd.start + ':' + titleOf(m);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push({ m, start: bd.start, end: bd.end });
+      }
+    }
+    return out.sort((x, y) => x.start - y.start);
+  }
   function selectedGrid() {
     const row = channelRows[gridIndex];
     if (!row) return null;
-    return { row, programme: airingAt(row, gridBase + gridSlot * SLOT + SLOT / 2) };
+    return { row, programme: airingAt(row, focusTime) };
   }
+  function dayLabel(t) {
+    const d = localDate(t);
+    if (d === localDate(Date.now())) return 'Today';
+    if (d === localDate(Date.now() + DAY)) return 'Tomorrow';
+    return new Date(t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  function mainTitle(m) { return m?.grandparentTitle || m?.title || 'Programme'; }
+  function subTitle(m) {
+    if (!m?.grandparentTitle || !m.title || m.title === m.grandparentTitle) return '';
+    const se = m.parentIndex != null && m.index != null ? 'S' + m.parentIndex + ' E' + m.index + ' · ' : '';
+    return se + m.title;
+  }
+  function mins(ms) {
+    const n = Math.max(0, Math.round(ms / 60000));
+    return n >= 60 ? Math.floor(n / 60) + ' h' + (n % 60 ? ' ' + (n % 60) + ' min' : '') : n + ' min';
+  }
+
+  function buildGrid() {
+    gridEl = h('div', 'hx-grid', el);
+    const top = h('div', 'hx-top', gridEl);
+    h('div', 'hx-title', top).textContent = 'Live TV';
+    g.clock = h('div', 'hx-clock', top);
+    const panel = h('section', 'hx-info', gridEl);
+    const main = h('div', 'hx-info-main', panel);
+    g.ch = h('div', 'hx-info-ch', main);
+    g.title = h('h2', 'hx-info-title', main);
+    g.sub = h('div', 'hx-info-sub', main);
+    g.meta = h('div', 'hx-info-meta', main);
+    const side = h('div', 'hx-info-side', panel);
+    g.summary = h('p', 'hx-info-summary', side);
+    g.chips = h('div', 'hx-chips', side);
+    const times = h('div', 'hx-times', gridEl);
+    g.day = h('div', 'hx-day', times);
+    g.hours = h('div', 'hx-hours', times);
+    g.rows = h('div', 'hx-rows', gridEl);
+    const keys = h('footer', 'hx-keys', gridEl);
+    const key = (label, kind, value) => {
+      const item = h('span', '', keys);
+      const k = h('span', kind, item);
+      if (kind === 'hx-dot') k.style.background = value; else k.textContent = value;
+      item.appendChild(document.createTextNode(label));
+    };
+    key('Watch', 'hx-key', 'OK');
+    key('Record', 'hx-dot', '#E5383B');
+    key('Channels', 'hx-glyph', '▲▼');
+    key('Programmes', 'hx-glyph', '◀▶');
+    key('Day', 'hx-glyph', 'FF RW');
+    h('span', 'hx-sp', keys);
+    key('Recordings', 'hx-dot', '#2FA84F');
+    key('Day guide', 'hx-dot', '#F2C230');
+    key('Diagnostics', 'hx-dot', '#3A7BE0');
+  }
+
+  function renderInfo(row, p) {
+    const now = Date.now();
+    g.ch.textContent = '';
+    if (row.channelVcn) h('b', '', g.ch).textContent = row.channelVcn;
+    g.ch.appendChild(document.createTextNode(row.name || row.channel));
+    g.meta.textContent = '';
+    g.chips.textContent = '';
+    if (!p) {
+      const onNow = focusTime <= now + 60000 && row.title;
+      g.title.textContent = onNow ? row.title : 'No programme information';
+      g.sub.textContent = '';
+      g.summary.textContent = onNow ? (row.subtitle && row.subtitle !== row.title ? row.subtitle : '') :
+        (row.gridKey ? (cached(localDate(focusTime), row) ? 'The guide has nothing listed for this time.' : 'Loading guide…') :
+          'This channel has no guide data in Plex.');
+      return;
+    }
+    const { start, end } = airingBounds(p);
+    g.title.textContent = mainTitle(p);
+    g.sub.textContent = subTitle(p);
+    const when = (localDate(start) === localDate(now) ? '' : dayLabel(start) + ' ') + hhmm(start) + ' – ' + hhmm(end);
+    h('span', '', g.meta).textContent = when;
+    if (start <= now && end > now) {
+      const bar = h('div', 'hx-bar', g.meta);
+      h('i', '', bar).style.width = Math.round((now - start) / (end - start) * 100) + '%';
+      h('span', '', g.meta).textContent = mins(end - now) + ' left';
+    } else if (start > now) {
+      h('span', '', g.meta).textContent = (start - now < DAY ? 'Starts in ' + mins(start - now) : mins(end - start));
+    }
+    g.summary.textContent = p.summary || '';
+    const chips = [];
+    if (isScheduled(p)) chips.push(['● Recording', 'rec']);
+    for (const genre of (p.Genre || []).slice(0, 3)) if (genre?.tag) chips.push([genre.tag, '']);
+    if (p.year) chips.push([String(p.year), '']);
+    chips.push([mins(end - start), '']);
+    for (const [text, cls] of chips) h('span', cls, g.chips).textContent = text;
+  }
+
   function renderGrid() {
+    if (!gridEl) buildGrid();
     el.classList.add('humax-grid-active');
-    list.innerHTML = '';
-    setText(info, '');
-    const today = localDate(Date.now());
-    const head = h('div', 'humax-epg-heading', list);
-    h('div', 'humax-epg-station', head).textContent = 'CHANNEL';
-    for (let n = 0; n < slotsVisible; n++) {
-      const t = gridBase + (gridSlot + n) * SLOT;
-      const day = localDate(t) === today ? '' :
-        new Date(t).toLocaleDateString('en-GB', { weekday: 'short' }) + ' ';
-      h('div', 'humax-epg-hour', head).textContent = day + hhmm(t);
+    const now = Date.now();
+    g.clock.textContent = new Date(now).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ';
+    h('b', '', g.clock).textContent = hhmm(now);
+    // Keep the selected row inside the visible window: no measuring, no scrolling.
+    if (gridIndex < gridTop) gridTop = gridIndex;
+    if (gridIndex >= gridTop + ROWS) gridTop = gridIndex - ROWS + 1;
+    gridTop = Math.max(0, Math.min(gridTop, Math.max(0, channelRows.length - ROWS)));
+    const a = windowStart, b = windowStart + SPAN;
+    const pct = t => ((t - a) / SPAN * 100).toFixed(3) + '%';
+    g.day.textContent = dayLabel(a).toUpperCase();
+    g.hours.textContent = '';
+    for (let k = 0; k < 4; k++) {
+      const span = h('span', '', g.hours);
+      span.style.left = (k * 25) + '%';
+      span.textContent = hhmm(a + k * SLOT);
     }
-    channelRows.forEach((row, ri) => {
-      const line = h('div', 'humax-epg-line', list);
-      h('div', 'humax-epg-station', line).textContent = row.channel;
-      for (let n = 0; n < slotsVisible; n++) {
-        const mid = gridBase + (gridSlot + n) * SLOT + SLOT / 2;
-        const m = airingAt(row, mid);
-        const cell = h('div', 'humax-epg-cell' + (ri === gridIndex && n === 0 ? ' focus' : ''), line);
-        if (m) cell.textContent = titleOf(m);
-        else if (gridSlot === 0 && n === 0 && row.title) cell.textContent = row.title;
-        else cell.textContent = guideKnown(row, mid) || !row.gridKey ? 'No guide data' : '…';
-      }
-    });
+    g.rows.textContent = '';
     const sel = selectedGrid();
-    if (sel) {
-      const what = sel.programme ? rangeOf(sel.programme) + ' ' + titleOf(sel.programme) :
-        (gridSlot === 0 ? sel.row.title : '');
-      setText(details, sel.row.channel + (what ? ' · ' + what : '') + ' · ' + GRID_HINT);
+    channelRows.slice(gridTop, gridTop + ROWS).forEach((row, i) => {
+      const ri = gridTop + i;
+      const line = h('div', 'hx-row' + (ri === gridIndex ? ' sel' : ''), g.rows);
+      const ch = h('div', 'hx-ch', line);
+      h('span', 'hx-num', ch).textContent = row.channelVcn || '';
+      h('span', 'hx-name', ch).textContent = row.name || row.channel;
+      const track = h('div', 'hx-track', line);
+      const shows = showsBetween(row, a, b);
+      const block = (start, end, cls, title, sub, rec) => {
+        if (cls === 'empty' && ri === gridIndex && !sel?.programme && focusTime >= start && focusTime < end) {
+          cls = 'focus';
+          title = title || 'No guide data';
+        }
+        const l = Math.max(start, a), r = Math.min(end, b);
+        const node = h('div', 'hx-prog ' + cls + ((r - l) < 15 * 60000 ? ' narrow' : ''), track);
+        node.style.left = pct(l);
+        node.style.width = 'calc(' + pct(r) + ' - ' + pct(l) + ' - 6px)';
+        h('div', 'hx-pt' + (rec ? ' rec' : ''), node).textContent = (start < a ? '‹ ' : '') + title;
+        if (sub) h('div', 'hx-pm', node).textContent = sub;
+      };
+      if (!shows.length) {
+        const label = a <= now && row.title ? row.title :
+          (!row.gridKey || cached(localDate(a), row) ? 'No guide data' : 'Loading…');
+        const focusHere = ri === gridIndex;
+        block(a, b, (focusHere ? 'focus' : 'empty'), label, '', false);
+        return;
+      }
+      let cursor = a;
+      for (const s of shows) {
+        if (s.end <= cursor) continue;           // overlapping listing: keep the earlier one
+        const st = s.start < cursor && cursor > a ? cursor : s.start;
+        if (st >= b) continue;
+        if (st > cursor) block(cursor, st, 'empty', '', '', false);
+        const focused = ri === gridIndex && sel?.programme === s.m;
+        const onNow = s.start <= now && s.end > now;
+        block(st, s.end, focused ? 'focus' : onNow ? 'on' : '', titleOf(s.m),
+          hhmm(s.start) + ' – ' + hhmm(s.end), isScheduled(s.m));
+        cursor = Math.max(cursor, s.end);
+      }
+      if (cursor < b) block(cursor, b, 'empty', '', '', false);
+    });
+    if (now >= a && now < b) {
+      const line = h('div', 'hx-now', g.rows);
+      line.style.left = 'calc(272px + (100% - 272px) * ' + ((now - a) / SPAN).toFixed(4) + ')';
     }
-    // Scroll only the guide container, never the entire page. Keep the
-    // sticky time heading visible and reveal row one when navigating up.
-    const rowHeight = list.children[gridIndex + 1]?.getBoundingClientRect().height || 56;
-    const headHeight = head.getBoundingClientRect().height || 56;
-    const rowTop = headHeight + gridIndex * (rowHeight + 3);
-    const rowBottom = rowTop + rowHeight;
-    const visibleTop = list.scrollTop + headHeight;
-    const visibleBottom = list.scrollTop + list.clientHeight - 4;
-    if (gridIndex === 0) list.scrollTop = 0;
-    else if (rowTop < visibleTop) list.scrollTop = Math.max(0, rowTop - headHeight);
-    else if (rowBottom > visibleBottom) list.scrollTop = Math.max(0, rowBottom - list.clientHeight + 4);
-    list.scrollTop = Math.min(list.scrollTop, Math.max(0, list.scrollHeight - list.clientHeight));
+    const row = channelRows[gridIndex];
+    if (row) renderInfo(row, sel?.programme);
   }
+
+  // ---- guide navigation: by programme, not by fixed time slot -------------------
+
+  function revealFocus() {
+    if (focusTime < windowStart) windowStart = Math.max(minFocus(), slotFloor(focusTime));
+    if (focusTime >= windowStart + SPAN) windowStart = slotFloor(focusTime);
+  }
+  function moveRight() {
+    const p = airingAt(channelRows[gridIndex], focusTime);
+    const next = p ? airingBounds(p).end : slotFloor(focusTime) + SLOT;
+    focusTime = Math.min(maxFocus(), next);
+    revealFocus();
+  }
+  function moveLeft() {
+    const row = channelRows[gridIndex];
+    const p = airingAt(row, focusTime);
+    const cur = p ? airingBounds(p).start : slotFloor(focusTime);
+    if (cur <= Date.now()) {               // already on what is on now
+      focusTime = Math.max(focusTime, Date.now());
+      windowStart = minFocus();
+      return;
+    }
+    const prev = airingAt(row, cur - 1);
+    focusTime = Math.max(Date.now(), prev ? airingBounds(prev).start : slotFloor(cur - 1));
+    revealFocus();
+  }
+  function moveDays(n) {
+    focusTime = Math.max(Date.now(), Math.min(maxFocus(), focusTime + n * DAY));
+    windowStart = Math.max(minFocus(), slotFloor(focusTime));
+  }
+
   function showGrid() {
     if (diagnostic) diagnostic.style.display = 'none';
     if (!channelRows.length) { view = 'loading'; load(); return; }
-    // Re-anchor on the current half hour in case the screen sat open for a while.
-    const base = Math.floor(Date.now() / SLOT) * SLOT;
-    if (base !== gridBase) { gridSlot = Math.max(0, gridSlot - Math.round((base - gridBase) / SLOT)); gridBase = base; }
+    // Never leave the guide pointing at the past after it has been open a while.
+    if (windowStart < minFocus()) windowStart = minFocus();
+    if (focusTime < Date.now()) focusTime = Date.now();
     view = 'grid';
+    setText(details, '');
     renderGrid();
     fillGrid();
   }
   function activateGrid() {
     channelRows = entries.slice();
-    gridIndex = 0; gridSlot = 0;
-    gridBase = Math.floor(Date.now() / SLOT) * SLOT;
+    gridIndex = 0; gridTop = 0;
+    focusTime = Date.now();
+    windowStart = minFocus();
     showGrid();
+    loadScheduled();
+    clearInterval(clockTimer);
+    clockTimer = setInterval(() => {
+      if (!alive || view !== 'grid') return;
+      if (windowStart < minFocus()) windowStart = minFocus();
+      if (focusTime < Date.now()) focusTime = Date.now();
+      renderGrid();
+    }, 30000);
   }
 
   // ---- diagnostics ----------------------------------------------------------
@@ -429,7 +632,7 @@ export function LiveTvScreen() {
     const row = channelRows[gridIndex];
     if (!row) return;
     if (!row.gridKey || !providers.length) {
-      setText(details, 'Channel lineup did not provide a matching guide key. Press Blue for diagnostics.');
+      say('Channel lineup did not provide a matching guide key. Press Blue for diagnostics.');
       return;
     }
     guideChannel = row;
@@ -503,14 +706,14 @@ export function LiveTvScreen() {
     const selected = view === 'grid' ? selectedGrid() : null;
     const m = selected?.programme || (view === 'guide' ? entries[index]?.item : null);
     const title = m ? titleOf(m) : selected?.row?.title;
-    if (!m) { setText(details, 'No programme selected for recording'); return; }
+    if (!m) { say('No programme selected for recording'); return; }
     const guid = m.guid;
     const ratingKey = m.ratingKey;
     if (!guid && !ratingKey) {
-      setText(details, 'Plex EPG lacks programme GUID/rating key; cannot create DVR rule.'); return;
+      say('Plex EPG lacks programme GUID/rating key; cannot create DVR rule.'); return;
     }
     if (!window.confirm('Schedule Plex recording: ' + title + '?')) return;
-    setText(details, 'Checking Plex recording template for ' + title + '…');
+    say('Checking Plex recording template for ' + title + '…');
     try {
       const template = await server.get('/media/subscriptions/template', guid ? { guid } : { ratingKey });
       const t = (template.SubscriptionTemplate || template.MediaSubscription || [])[0];
@@ -526,9 +729,12 @@ export function LiveTvScreen() {
       if (t.params?.mediaProviderID) params['params[mediaProviderID]'] = t.params.mediaProviderID;
       const result = await dvrPost('/media/subscriptions', params);
       const subs = result.MediaSubscription || [];
-      setText(details, 'Plex recording rule created for ' + title +
+      if (m.guid) scheduledGuids.add(m.guid);
+      if (view === 'grid') renderGrid();
+      loadScheduled();
+      say('Plex recording rule created for ' + title +
         (subs[0]?.key ? ' · rule ' + subs[0].key : '') + ' · Green shows the schedule');
-    } catch (err) { setText(details, 'Recording not scheduled: ' + err.message); }
+    } catch (err) { say('Recording not scheduled: ' + err.message); }
   }
 
   // ---- playback -----------------------------------------------------------------
@@ -641,7 +847,7 @@ export function LiveTvScreen() {
       'Guide key: ' + String(row.gridKey || 'missing'),
       'Media ID: ' + String(row.item?.Media?.[0]?.id || 'missing'),
       'Candidate count: ' + ids.length];
-    setText(details, 'Tuning ' + row.channel + ' via DVR ' + dvr + '…');
+    say('Tuning ' + row.channel + ' via DVR ' + dvr + '…');
     let data = null;
     for (const id of ids) {
       try {
@@ -709,14 +915,14 @@ export function LiveTvScreen() {
     if (!row) return;
     const seq = ++tuneSeq;
     const zapping = view === 'playing';
-    if (!zapping) setText(details, 'Tuning ' + row.channel + '…');
+    if (!zapping) say('Tuning ' + row.channel + '…');
     try {
       if (tunerDeviceUri()) await playDispatcharr(row, seq);
       else await playViaPlex(row, seq);
     } catch (err) {
       if (seq !== tuneSeq) return;
       if (zapping) banner(row, 'Cannot tune: ' + err.message);
-      else setText(details, row.channel + ': ' + err.message);
+      else say(row.channel + ': ' + err.message);
     }
   }
   function tuneSelected() {
@@ -774,25 +980,20 @@ export function LiveTvScreen() {
       }
       if (view === 'grid') {
         switch (action) {
-          case 'up': gridIndex = Math.max(0, gridIndex - 1); renderGrid(); return true;
-          case 'down': gridIndex = Math.min(channelRows.length - 1, gridIndex + 1); renderGrid(); return true;
-          case 'left': gridSlot = Math.max(0, gridSlot - 1); renderGrid(); fillGrid(); return true;
-          case 'right': gridSlot = Math.min(7 * 48, gridSlot + 1); renderGrid(); fillGrid(); return true;
-          case 'rw': gridSlot = Math.max(0, gridSlot - 48); renderGrid(); fillGrid(); return true;
-          case 'ff': gridSlot = Math.min(7 * 48, gridSlot + 48); renderGrid(); fillGrid(); return true;
-          case 'pageup': gridIndex = Math.max(0, gridIndex - 10); renderGrid(); fillGrid(); return true;
-          case 'pagedown': gridIndex = Math.min(channelRows.length - 1, gridIndex + 10); renderGrid(); fillGrid(); return true;
+          case 'up': gridIndex = Math.max(0, gridIndex - 1); renderGrid(); if (gridIndex < gridTop + 1) fillGrid(); return true;
+          case 'down': gridIndex = Math.min(channelRows.length - 1, gridIndex + 1); renderGrid(); if (gridIndex >= gridTop + ROWS - 1) fillGrid(); return true;
+          case 'left': moveLeft(); renderGrid(); fillGrid(); return true;
+          case 'right': moveRight(); renderGrid(); fillGrid(); return true;
+          case 'rw': moveDays(-1); renderGrid(); fillGrid(); return true;
+          case 'ff': moveDays(1); renderGrid(); fillGrid(); return true;
+          case 'pageup': gridIndex = Math.max(0, gridIndex - ROWS); gridTop = gridIndex; renderGrid(); fillGrid(); return true;
+          case 'pagedown': gridIndex = Math.min(channelRows.length - 1, gridIndex + ROWS); gridTop = gridIndex; renderGrid(); fillGrid(); return true;
           case 'enter': case 'play': case 'playpause': tuneSelected(); return true;
           case 'record': case 'red': recordSelected(); return true;
           case 'green': showScheduled(); return true;
           case 'yellow': openChannelGuide(); return true;
           case 'blue': debugPage = 0; showDebug(); return true;
-          case 'info': {
-            const sel = selectedGrid();
-            if (sel?.programme) setText(details, sel.row.channel + ' · ' + rangeOf(sel.programme) + ' ' +
-              titleOf(sel.programme) + ' · ' + (sel.programme.summary || 'No description'));
-            return true;
-          }
+          case 'info': return true; // the info panel already shows the details
           case 'back': return false;
           default: return true;
         }
@@ -836,6 +1037,8 @@ export function LiveTvScreen() {
     destroy() {
       alive = false;
       clearTimeout(zapTimer);
+      clearInterval(clockTimer);
+      clearTimeout(sayTimer);
       if (view === 'playing') { const v = native(); if (v) v.close(); stopPlexSession(); }
     },
   };

@@ -1,0 +1,72 @@
+/* Live TV guide (timeline with info panel). Appended to css/app.css by apply.py. */
+.humax-grid-active .settings-title,
+.humax-grid-active .humax-live-status,
+.humax-grid-active .humax-live-list { display: none !important; }
+
+.hx-grid { display: none; position: absolute; inset: 0; z-index: 5; box-sizing: border-box;
+  padding: 44px 80px 36px; background: #0B0D12; color: #FFF7E6; font-family: var(--body);
+  flex-direction: column; gap: 20px; overflow: hidden; }
+.humax-grid-active .hx-grid { display: flex; }
+
+.hx-top { display: flex; justify-content: space-between; align-items: baseline; flex: none; }
+.hx-title { font: 700 46px/1 var(--display); letter-spacing: .5px; }
+.hx-clock { font-size: 22px; color: rgba(255,247,230,.72); }
+.hx-clock b { color: #FFF7E6; font-weight: 600; }
+
+.hx-info { display: flex; gap: 48px; height: 196px; box-sizing: border-box; flex: none;
+  background: #181B23; border-radius: 20px; padding: 26px 40px; }
+.hx-info-main { width: 760px; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
+.hx-info-ch { font-size: 20px; font-weight: 600; color: rgba(255,247,230,.72); }
+.hx-info-ch b { font: 700 26px var(--display); color: var(--coral); margin-right: 12px; }
+.hx-info-title { margin: 0; padding-bottom: 2px; font: 700 54px/1.12 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hx-info-sub { font-size: 20px; color: rgba(255,247,230,.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hx-info-sub:empty { display: none; }
+.hx-info-meta { display: flex; gap: 18px; align-items: center; font-size: 20px; color: rgba(255,247,230,.72); }
+.hx-bar { width: 260px; height: 6px; border-radius: 3px; background: rgba(255,247,230,.14); overflow: hidden; }
+.hx-bar i { display: block; height: 100%; background: var(--coral); }
+.hx-info-side { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 14px; min-width: 0; }
+.hx-info-summary { margin: 0; font-size: 22px; line-height: 1.45; color: rgba(255,247,230,.78);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.hx-chips { display: flex; gap: 10px; font-size: 17px; font-weight: 600; }
+.hx-chips span { padding: 6px 12px; border-radius: 8px; background: rgba(255,247,230,.10); }
+.hx-chips .rec { background: rgba(255,76,66,.24); color: #FFD9D6; }
+
+.hx-times { display: flex; gap: 12px; height: 34px; flex: none; }
+.hx-day { width: 260px; flex: none; font-size: 18px; font-weight: 600; letter-spacing: 2px; color: rgba(255,247,230,.62); display: flex; align-items: center; }
+.hx-hours { flex: 1; position: relative; font: 600 26px var(--display); color: rgba(255,247,230,.72); }
+.hx-hours span { position: absolute; top: 0; }
+
+.hx-rows { position: relative; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.hx-row { display: flex; gap: 12px; height: 74px; flex: none; }
+.hx-ch { width: 260px; box-sizing: border-box; border-radius: 12px; padding: 0 20px; display: flex; gap: 16px;
+  align-items: center; background: #181B23; color: rgba(255,247,230,.85); flex: none; }
+.hx-row.sel .hx-ch { background: #2B3142; color: #FFF7E6; }
+.hx-num { font: 700 30px var(--display); min-width: 36px; }
+.hx-name { font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hx-track { flex: 1; position: relative; }
+.hx-prog { position: absolute; top: 0; bottom: 0; box-sizing: border-box; border-radius: 10px; padding: 11px 16px;
+  overflow: hidden; display: flex; flex-direction: column; gap: 4px; background: #151922;
+  border: 1px solid rgba(255,247,230,.08); }
+.hx-prog.narrow { padding: 11px 8px; }
+.hx-prog.on { background: #262C3B; border-color: transparent; }
+.hx-prog.empty { background: transparent; border: 1px dashed rgba(255,247,230,.16); color: rgba(255,247,230,.55); }
+.hx-prog.focus { background: #FFF7E6; color: #0B0D12; border-color: transparent; box-shadow: 0 0 0 3px var(--coral); z-index: 2; }
+.hx-pt { font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hx-pt.rec::before { content: ''; display: inline-block; width: 11px; height: 11px; border-radius: 6px;
+  background: var(--coral); margin-right: 8px; vertical-align: 2px; }
+.hx-pm { font-size: 16px; opacity: .7; white-space: nowrap; overflow: hidden; }
+.hx-now { position: absolute; top: -42px; bottom: 0; width: 3px; border-radius: 2px; background: var(--coral);
+  z-index: 3; pointer-events: none; }
+
+.hx-keys { display: flex; gap: 34px; align-items: center; font-size: 19px; color: rgba(255,247,230,.72); flex: none; }
+.hx-keys > span { display: flex; gap: 10px; align-items: center; }
+.hx-keys .hx-sp { flex: 1; }
+.hx-key { padding: 3px 9px; border: 1.5px solid rgba(255,247,230,.5); border-radius: 6px; font-weight: 600; color: #FFF7E6; }
+.hx-glyph { font-weight: 600; color: #FFF7E6; }
+.hx-dot { width: 16px; height: 16px; border-radius: 8px; }
+
+/* Messages (tuning, recording) float above the guide and clear themselves. */
+.humax-grid-active .humax-live-detail { position: absolute; z-index: 6; left: 50%; right: auto; bottom: 96px;
+  transform: translateX(-50%); max-width: 1200px; max-height: none; padding: 16px 28px; border-radius: 14px;
+  background: #2B3142; color: #FFF7E6; font-size: 22px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+.humax-grid-active .humax-live-detail:empty { display: none; }

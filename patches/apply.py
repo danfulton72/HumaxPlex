@@ -486,25 +486,7 @@ css.write_text(css.read_text(encoding="utf-8") + """
 """, encoding="utf-8")
 
 css.write_text(css.read_text(encoding="utf-8") + """
-.humax-epg-heading,.humax-epg-line {display:grid;grid-template-columns:250px repeat(5,minmax(170px,1fr));gap:5px;margin-bottom:5px;}
-.humax-epg-heading {position:sticky;top:0;z-index:3;background:#111b2d;}
-.humax-epg-station,.humax-epg-hour,.humax-epg-cell {padding:15px 12px;border-radius:8px;min-height:56px;overflow:hidden;}
-.humax-epg-station {background:#132d4c;font-weight:700;color:#fff;}
-.humax-epg-hour {background:#142943;color:#ffcc71;font-weight:700;text-align:center;}
-.humax-epg-cell {background:#155785;color:#f7f8fa;font-size:18px;line-height:1.3;}
-.humax-epg-line:nth-child(even) .humax-epg-cell {background:#194773;}
-.humax-epg-line .humax-epg-cell.focus,.humax-epg-line:has(.focus) .humax-epg-station {background:#d45d9e;color:#fff;}
 .humax-live-list {top:225px !important;height:calc(100% - 310px) !important;max-height:none !important;overflow-y:auto;overscroll-behavior:contain;}
-.humax-epg-heading,.humax-epg-line {grid-template-columns:235px repeat(5,minmax(165px,1fr));gap:4px;margin-bottom:4px;}
-.humax-epg-station,.humax-epg-hour,.humax-epg-cell {padding:9px 10px;min-height:43px;line-height:1.2;}
-.humax-epg-station {font-size:17px;}
-.humax-epg-cell {font-size:16px;}
-.humax-grid-active .humax-live-status {display:none !important;}
-.humax-grid-active .humax-live-list {top:50% !important;transform:translateY(-50%);height:610px !important;max-height:calc(100% - 170px) !important;overflow-y:auto !important;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:none;}
-.humax-grid-active .humax-epg-heading {position:sticky;top:0;z-index:5;}
-.humax-grid-active .humax-epg-line {scroll-margin-top:60px;}
-.humax-epg-heading,.humax-epg-line {margin-bottom:3px;}
-.humax-epg-station,.humax-epg-hour,.humax-epg-cell {box-sizing:border-box;height:53px;min-height:53px;padding:7px 9px;}
-""",encoding="utf-8")
+""" + (Path(__file__).resolve().parent / "livetv.css").read_text(encoding="utf-8"), encoding="utf-8")
 
 print("Prepared HumaxPlex app assets at", dest)
