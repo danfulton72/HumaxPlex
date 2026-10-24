@@ -70,7 +70,7 @@ Live TV uses the Plex DVR guide; with a Dispatcharr HDHomeRun tuner, streams pla
 | Guide | Up / Down, CH+ / CH− | Channel / page of channels |
 | Guide | Record / Red | Record programme |
 | Guide | FF / RW | Forward / back one day |
-| Guide | Green · Yellow · Blue | Recordings · channel day guide · diagnostics |
+| Guide | Green · Yellow · Blue | Diagnostics · channel day guide · recordings |
 | Watching | Up / CH+, Down / CH− | Next / previous channel |
 | Watching | Left / Last | Previous channel |
 | Watching | OK / Info | Now & next banner |

@@ -7,7 +7,7 @@
 //
 // Remote keys
 //   Guide grid : arrows move · OK/Play watch · Record/Red record · FF/RW ±1 day
-//                Green recordings · Yellow channel day guide · Blue diagnostics
+//                Blue recordings · Yellow channel day guide · Green diagnostics
 //   Watching   : Up/CH+ next channel · Down/CH− previous · Left/Last previous
 //                channel · OK/Info now & next · Right audio/subtitles · Back guide
 import { h, setText } from '../util/dom.js';
@@ -63,6 +63,16 @@ export function airingIn(shows, when) {
     if (Number.isFinite(b.start) && b.start <= when && b.end > when) return m;
   }
   return null;
+}
+
+// Display name for a channel: drop a leading channel number and everything up
+// to and including the first "|" ("14365 UK| SKY CINEMA" -> "SKY CINEMA").
+export function channelLabel(name) {
+  const raw = String(name || '').trim();
+  let s = raw.replace(/^\d+\s+/, '');
+  const bar = s.indexOf('|');
+  if (bar !== -1) s = s.slice(bar + 1);
+  return s.trim() || raw;
 }
 
 export function sortByChannelNumber(rows) {
@@ -275,16 +285,14 @@ export function LiveTvScreen() {
     key('Programmes', 'hx-glyph', '◀▶');
     key('Day', 'hx-glyph', 'FF RW');
     h('span', 'hx-sp', keys);
-    key('Recordings', 'hx-dot', '#2FA84F');
+    key('Diagnostics', 'hx-dot', '#2FA84F');
     key('Day guide', 'hx-dot', '#F2C230');
-    key('Diagnostics', 'hx-dot', '#3A7BE0');
+    key('Recordings', 'hx-dot', '#3A7BE0');
   }
 
   function renderInfo(row, p) {
     const now = Date.now();
-    g.ch.textContent = '';
-    if (row.channelVcn) h('b', '', g.ch).textContent = row.channelVcn;
-    g.ch.appendChild(document.createTextNode(row.name || row.channel));
+    g.ch.textContent = channelLabel(row.name || row.channel);
     g.meta.textContent = '';
     g.chips.textContent = '';
     if (!p) {
@@ -342,8 +350,7 @@ export function LiveTvScreen() {
       const ri = gridTop + i;
       const line = h('div', 'hx-row' + (ri === gridIndex ? ' sel' : ''), g.rows);
       const ch = h('div', 'hx-ch', line);
-      h('span', 'hx-num', ch).textContent = row.channelVcn || '';
-      h('span', 'hx-name', ch).textContent = row.name || row.channel;
+      h('span', 'hx-name', ch).textContent = channelLabel(row.name || row.channel);
       const track = h('div', 'hx-track', line);
       const shows = showsBetween(row, a, b);
       const block = (start, end, cls, title, sub, rec) => {
@@ -614,7 +621,7 @@ export function LiveTvScreen() {
       if (!found.length) {
         setText(info, 'DVR found. EPG providers: ' + prefixes.size +
           ' · Successful guide requests: ' + replies.filter(r => r.status === 'fulfilled').length +
-          '/' + replies.length + '. Channel listings unavailable; press Blue for diagnostics.');
+          '/' + replies.length + '. Channel listings unavailable; press Green for diagnostics.');
         view = 'empty';
         return;
       }
@@ -632,7 +639,7 @@ export function LiveTvScreen() {
     const row = channelRows[gridIndex];
     if (!row) return;
     if (!row.gridKey || !providers.length) {
-      say('Channel lineup did not provide a matching guide key. Press Blue for diagnostics.');
+      say('Channel lineup did not provide a matching guide key. Press Green for diagnostics.');
       return;
     }
     guideChannel = row;
@@ -733,7 +740,7 @@ export function LiveTvScreen() {
       if (view === 'grid') renderGrid();
       loadScheduled();
       say('Plex recording rule created for ' + title +
-        (subs[0]?.key ? ' · rule ' + subs[0].key : '') + ' · Green shows the schedule');
+        (subs[0]?.key ? ' · rule ' + subs[0].key : '') + ' · Blue shows the schedule');
     } catch (err) { say('Recording not scheduled: ' + err.message); }
   }
 
@@ -746,7 +753,7 @@ export function LiveTvScreen() {
     const v = native();
     if (!v || typeof v.setLiveBanner !== 'function' || !row) return;
     const now = Date.now();
-    const lines = [row.channel];
+    const lines = [channelLabel(row.name || row.channel)];
     let progress = -1;
     const cur = airingAt(row, now);
     if (cur) {
@@ -840,7 +847,7 @@ export function LiveTvScreen() {
     const ids = [...new Set([row.channelId, row.channelVcn, row.gridKey,
       row.item?.Media?.[0]?.channelIdentifier, row.item?.Media?.[0]?.id]
       .filter(v => v !== undefined && v !== null && String(v) !== '').map(String))];
-    if (!/^\d+$/.test(dvr) || !ids.length) throw new Error('No numeric DVR ID or channel identifier; press Blue for diagnostics');
+    if (!/^\d+$/.test(dvr) || !ids.length) throw new Error('No numeric DVR ID or channel identifier; press Green for diagnostics');
     const report = ['DVR ID: ' + dvr, 'Programme: ' + row.title,
       'Channel ID: ' + String(row.channelId || 'missing'),
       'Channel VCN: ' + String(row.channelVcn || 'missing'),
@@ -990,9 +997,9 @@ export function LiveTvScreen() {
           case 'pagedown': gridIndex = Math.min(channelRows.length - 1, gridIndex + ROWS); gridTop = gridIndex; renderGrid(); fillGrid(); return true;
           case 'enter': case 'play': case 'playpause': tuneSelected(); return true;
           case 'record': case 'red': recordSelected(); return true;
-          case 'green': showScheduled(); return true;
+          case 'blue': showScheduled(); return true;
           case 'yellow': openChannelGuide(); return true;
-          case 'blue': debugPage = 0; showDebug(); return true;
+          case 'green': debugPage = 0; showDebug(); return true;
           case 'info': return true; // the info panel already shows the details
           case 'back': return false;
           default: return true;
@@ -1007,7 +1014,7 @@ export function LiveTvScreen() {
       if (view === 'debug') {
         if (action === 'pageup' || action === 'up' || action === 'left') { debugPage--; showDebug(); return true; }
         if (action === 'pagedown' || action === 'down' || action === 'right') { debugPage++; showDebug(); return true; }
-        if (action === 'back' || action === 'enter' || action === 'blue') { closeOverlay(); return true; }
+        if (action === 'back' || action === 'enter' || action === 'green') { closeOverlay(); return true; }
         return true;
       }
       if (view === 'guide') {
@@ -1018,7 +1025,7 @@ export function LiveTvScreen() {
           case 'right': openGuide(dayOffset + 1); return true;
           case 'enter': case 'record': case 'red': recordSelected(); return true;
           case 'play': case 'playpause': tuneSelected(); return true;
-          case 'blue': debugPage = 0; showDebug(); return true;
+          case 'green': debugPage = 0; showDebug(); return true;
           case 'back': case 'yellow': showGrid(); return true;
           default: return true;
         }
@@ -1027,11 +1034,11 @@ export function LiveTvScreen() {
         switch (action) {
           case 'up': index = Math.max(0, index - 1); focus(); return true;
           case 'down': index = Math.min(entries.length - 1, index + 1); focus(); return true;
-          case 'back': case 'left': case 'green': showGrid(); return true;
+          case 'back': case 'left': case 'blue': showGrid(); return true;
           default: return true;
         }
       }
-      if (view === 'empty' && action === 'blue') { debugPage = 0; returnView = 'grid'; showDebug(); return true; }
+      if (view === 'empty' && action === 'green') { debugPage = 0; returnView = 'grid'; showDebug(); return true; }
       return false;
     },
     destroy() {
