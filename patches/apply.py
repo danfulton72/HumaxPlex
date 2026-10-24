@@ -677,6 +677,19 @@ export function LiveTvScreen() {
     const part=m.Media?.[0]?.Part?.[0];
     return part?.key || m.key || data.key || '';
   }
+  function showTuneReport(lines) {
+    if (!diagnostic) {
+      diagnostic = h('div','humax-live-debug',el);
+      const heading = h('div','humax-debug-title',diagnostic);
+      heading.textContent = 'Plex tuning diagnostics — Down: next · Back: close';
+      h('pre','humax-debug-content',diagnostic);
+    }
+    debugResponses=[{name:'Tune request results',data:lines}];
+    debugPage=0;
+    view='tune-debug';
+    diagnostic.style.display='';
+    diagnostic.querySelector('pre').textContent = 'TUNE REQUESTS (page 1)\\n' + lines.slice(0,25).join('\\n');
+  }
   async function tuneSelected() {
     const e = view === 'guide' ? guideChannel : entries[index];
     if (!e) return;
@@ -688,6 +701,12 @@ export function LiveTvScreen() {
       setText(details,'No numeric DVR ID or channel identifier; open diagnostics.'); return;
     }
     const results = [];
+    const report = ['DVR ID: '+dvr, 'Programme: '+e.title,
+      'Channel ID: '+String(e.channelId || 'missing'),
+      'Channel VCN: '+String(e.channelVcn || 'missing'),
+      'Guide key: '+String(e.gridKey || 'missing'),
+      'Media ID: '+String(e.item?.Media?.[0]?.id || 'missing'),
+      'Candidate count: '+ids.length];
     setText(details,'Tuning '+e.channel+' via DVR '+dvr+'…');
     let data=null;
     for (const id of ids) {
@@ -696,11 +715,15 @@ export function LiveTvScreen() {
           '/channels/'+encodeURIComponent(id)+'/tune');
         results.push(id+':OK');
         break;
-      } catch(err) { results.push(id+':'+String(err.message).match(/HTTP \\d+/)?.[0]); }
+      } catch(err) {
+        const status=String(err.message).match(/HTTP \\d+/)?.[0] || 'request failed';
+        results.push(id+':'+status);
+        report.push('POST /livetv/dvrs/'+dvr+'/channels/'+id+'/tune: '+status);
+      }
     }
     if (!data) {
-      setText(details,'Tune rejected · DVR '+dvr+' · IDs '+results.join(' | ')+
-        ' · Try official Plex channel again if it also fails.');
+      report.push('All tuning attempts rejected. No HLS request made.');
+      showTuneReport(report);
       return;
     }
     try {
