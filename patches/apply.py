@@ -521,8 +521,19 @@ export function LiveTvScreen() {
     const sel=selectedGrid();
     if(sel) setText(details, sel.row.channel+' · '+(sel.programme?.title||sel.row.title)+
       ' · OK to watch · Record key to schedule programme');
+    // Scroll only the guide container, never the entire page. Keep the
+    // sticky time heading visible and reveal row one when navigating up.
     const selected=list.children[gridIndex+1];
-    if(selected)selected.scrollIntoView({block:'nearest'});
+    if(gridIndex===0) list.scrollTop=0;
+    else if(selected) {
+      const headerHeight=head.offsetHeight+6;
+      const rowTop=selected.offsetTop-list.offsetTop;
+      const rowBottom=rowTop+selected.offsetHeight;
+      const top=list.scrollTop+headerHeight;
+      const bottom=list.scrollTop+list.clientHeight;
+      if(rowTop<top)list.scrollTop=Math.max(0,rowTop-headerHeight);
+      else if(rowBottom>bottom)list.scrollTop=rowBottom-list.clientHeight+8;
+    }
   }
   async function fillGrid() {
     const rows=channelRows.slice();
@@ -1181,7 +1192,12 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-epg-cell {background:#155785;color:#f7f8fa;font-size:18px;line-height:1.3;}
 .humax-epg-line:nth-child(even) .humax-epg-cell {background:#194773;}
 .humax-epg-line .humax-epg-cell.focus,.humax-epg-line:has(.focus) .humax-epg-station {background:#d45d9e;color:#fff;}
-.humax-live-list {overflow-y:auto;max-height:68vh;}
+.humax-live-list {top:225px !important;height:calc(100% - 310px) !important;max-height:none !important;overflow-y:auto;overscroll-behavior:contain;}
+.humax-epg-heading,.humax-epg-line {grid-template-columns:235px repeat(5,minmax(165px,1fr));gap:4px;margin-bottom:4px;}
+.humax-epg-station,.humax-epg-hour,.humax-epg-cell {padding:9px 10px;min-height:43px;line-height:1.2;}
+.humax-epg-station {font-size:17px;}
+.humax-epg-cell {font-size:16px;}
+.humax-live-status {top:165px !important;}
 """,encoding="utf-8")
 
 print("Prepared HumaxPlex app assets at", dest)
