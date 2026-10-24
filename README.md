@@ -59,6 +59,22 @@ without uninstalling. Do not regenerate the key: losing it prevents upgrades.
 The workflow deliberately fails when signing secrets are missing rather than
 silently making a differently signed APK.
 
+## Live TV remote keys
+
+Live TV uses the Plex DVR guide; with a Dispatcharr HDHomeRun tuner, streams play directly from Dispatcharr.
+
+| Where | Key | Action |
+| --- | --- | --- |
+| Guide | OK / Play | Watch channel |
+| Guide | Record / Red | Record programme |
+| Guide | FF / RW | Forward / back one day |
+| Guide | Green · Yellow · Blue | Recordings · channel day guide · diagnostics |
+| Watching | Up / CH+, Down / CH− | Next / previous channel |
+| Watching | Left / Last | Previous channel |
+| Watching | OK / Info | Now & next banner |
+| Watching | Right | Audio and subtitle tracks |
+| Watching | Back | Return to guide |
+
 ## Caveats
 
 Android WebView HTML5 playback, CORS from Plex, TV remote keys and text entry may require further work. HLS playback is firmware-dependent. Do not assume the APK works until tested on your box. The device need not be rooted.

@@ -59,6 +59,11 @@ public final class MainActivity extends Activity {
     private String playbackError = null;
     private long playbackStartedAt = 0;
     private String playbackKind = "unknown";
+    // Live TV: set by HumaxVideo.setLiveBanner() after open(); cleared by closeVideo().
+    // In live mode channel keys go to the web app and the HUD shows now/next.
+    private boolean liveMode = false;
+    private String liveBanner = null;
+    private int liveProgress = -1;
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -185,6 +190,18 @@ public final class MainActivity extends Activity {
             playbackHud.setVisibility(View.VISIBLE);
             return;
         }
+        if (liveMode) {
+            playbackTimes.setText(liveBanner == null ? "Live TV" : liveBanner);
+            if (liveProgress >= 0) {
+                playbackProgress.setVisibility(View.VISIBLE);
+                playbackProgress.setProgress(Math.min(1000, liveProgress));
+            } else {
+                playbackProgress.setVisibility(View.GONE);
+            }
+            if (nativePlayer.isPlaying() && android.os.SystemClock.uptimeMillis()-hudShownAt>5000)
+                playbackHud.setVisibility(View.GONE);
+            return;
+        }
         long pos = Math.max(0, nativePlayer.getCurrentPosition());
         long duration = nativePlayer.getDuration();
         if (duration > 0) {
@@ -209,6 +226,9 @@ public final class MainActivity extends Activity {
     }
     private void closeVideo() {
         setPlaybackAwake(false);
+        liveMode = false;
+        liveBanner = null;
+        liveProgress = -1;
         if (nativePlayer != null) {
             nativePlayer.release();
             nativePlayer = null;
@@ -433,6 +453,18 @@ public final class MainActivity extends Activity {
             return nativePlayer == null ? 0 : nativePlayer.getCurrentPosition();
         }
         @JavascriptInterface public void close() { runOnUiThread(() -> closeVideo()); }
+        // Marks the current stream as live TV and shows a now/next banner over it.
+        // progress is 0-1000 through the current programme, or -1 to hide the bar.
+        @JavascriptInterface public void setLiveBanner(String text, int progress) {
+            runOnUiThread(() -> {
+                if (nativePlayer == null) return;
+                liveMode = true;
+                liveBanner = text;
+                liveProgress = progress;
+                showPlaybackHud();
+                updatePlaybackHud();
+            });
+        }
     }
 
 
@@ -589,6 +621,11 @@ public final class MainActivity extends Activity {
             case KeyEvent.KEYCODE_MEDIA_RECORD: case KeyEvent.KEYCODE_PROG_RED: case KeyEvent.KEYCODE_R: return "record";
             case KeyEvent.KEYCODE_CHANNEL_UP: return "pageup";
             case KeyEvent.KEYCODE_CHANNEL_DOWN: return "pagedown";
+            case KeyEvent.KEYCODE_PROG_GREEN: return "green";
+            case KeyEvent.KEYCODE_PROG_YELLOW: return "yellow";
+            case KeyEvent.KEYCODE_PROG_BLUE: return "blue";
+            case KeyEvent.KEYCODE_INFO: return "info";
+            case KeyEvent.KEYCODE_LAST_CHANNEL: return "last";
             default: return null;
         }
     }
@@ -602,6 +639,16 @@ public final class MainActivity extends Activity {
                 // here so pause/seek work even when WebView cannot show the OSD.
                 if (nativePlayer != null && nativePlayer.getPlaybackState() != Player.STATE_IDLE) {
                     showPlaybackHud();
+                    if (liveMode && !"playpause".equals(a) && !"play".equals(a) && !"pause".equals(a)) {
+                        // Live TV: Right opens audio/subtitles; every other key
+                        // (channel up/down, last channel, now/next, back) goes to JS.
+                        if ("right".equals(a)) {
+                            if (event.getRepeatCount() == 0) showTrackMenu();
+                        } else {
+                            web.evaluateJavascript("window.__androidAction && window.__androidAction('" + a + "')", null);
+                        }
+                        return true;
+                    }
                     switch (a) {
                         case "down":
                             if (event.getRepeatCount() == 0) showTrackMenu();
