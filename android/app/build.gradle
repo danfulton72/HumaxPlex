@@ -6,10 +6,26 @@ android {
         applicationId 'org.samsucks.humax'
         minSdk 28
         targetSdk 28
-        versionCode 5
-        versionName '0.1.5-nativeplayer'
+        versionCode (System.getenv('GITHUB_RUN_NUMBER') ?: '5').toInteger() + 1000
+        versionName "0.2.${System.getenv('GITHUB_RUN_NUMBER') ?: '0'}"
     }
-    buildTypes { release { minifyEnabled false } }
+    signingConfigs {
+        persistent {
+            storeFile file(System.getenv('HUMAX_KEYSTORE_PATH') ?: 'humax-release.jks')
+            storePassword System.getenv('HUMAX_KEYSTORE_PASSWORD') ?: ''
+            keyAlias System.getenv('HUMAX_KEY_ALIAS') ?: 'humaxplex'
+            keyPassword System.getenv('HUMAX_KEY_PASSWORD') ?: ''
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.persistent
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.persistent
+        }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 dependencies {
