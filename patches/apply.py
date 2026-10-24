@@ -669,8 +669,13 @@ export function LiveTvScreen() {
       headers:Object.assign({Accept:'application/json','X-Plex-Token':server.token}, identity())});
     const body = await response.text();
     if (!response.ok) throw new Error('Plex HTTP '+response.status+' '+body.slice(0,140));
-    try { const data=JSON.parse(body); return data.MediaContainer || data; }
-    catch(e) { return {}; }
+    let data;
+    try { data=JSON.parse(body); }
+    catch(e) { throw new Error('Plex returned non-JSON response'); }
+    const result=data.MediaContainer || data;
+    if (typeof result.status === 'number' && result.status < 0)
+      throw new Error('Plex status '+result.status+': '+String(result.message || 'No error explanation').slice(0,180));
+    return result;
   }
   function playablePath(data) {
     const m=(data.Metadata || data.MediaContainer?.Metadata || [])[0] || data;
@@ -714,11 +719,12 @@ export function LiveTvScreen() {
         data=await dvrPost('/livetv/dvrs/'+encodeURIComponent(dvr)+
           '/channels/'+encodeURIComponent(id)+'/tune');
         results.push(id+':OK');
+        report.push('Channel '+id+': Plex accepted response');
         break;
       } catch(err) {
-        const status=String(err.message).match(/HTTP \\d+/)?.[0] || 'request failed';
+        const status=String(err.message).replace(/<[^>]*>/g,' ').slice(0,160);
         results.push(id+':'+status);
-        report.push('POST /livetv/dvrs/'+dvr+'/channels/'+id+'/tune: '+status);
+        report.push('Channel '+id+': '+status);
       }
     }
     if (!data) {
