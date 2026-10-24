@@ -58,6 +58,7 @@ public final class MainActivity extends Activity {
     private String videoStats = "video idle";
     private String playbackError = null;
     private long playbackStartedAt = 0;
+    private String playbackKind = "unknown";
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -230,6 +231,7 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 closeVideo();
                 playbackError = null;
+                playbackKind = url.contains("/video/:/transcode/") ? "Plex HLS transcode" : (url.contains("/livetv/") ? "Live session" : "Direct media");
                 playbackStartedAt = android.os.SystemClock.uptimeMillis();
                 nativePlayer = new ExoPlayer.Builder(MainActivity.this).build();
                 nativePlayer.setTrackSelectionParameters(nativePlayer.getTrackSelectionParameters()
@@ -274,6 +276,16 @@ public final class MainActivity extends Activity {
                         setPlaybackAwake(false);
                         playbackError = error.getErrorCodeName() + ": " +
                             (error.getMessage() == null ? "unknown" : error.getMessage());
+                        Throwable source = error.getCause();
+                        while (source != null) {
+                            if (source instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                                androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException http =
+                                    (androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) source;
+                                playbackError = playbackKind + " · HTTP " + http.responseCode;
+                                break;
+                            }
+                            source = source.getCause();
+                        }
                         showPlaybackHud();
                         js("error", org.json.JSONObject.quote(error.getMessage() == null ? "Media3 playback failed" : error.getMessage()));
                     }
