@@ -408,8 +408,10 @@ public final class MainActivity extends Activity {
                     out.put("h264", h264 || sawPps);
                     out.put("bytes", total);
                 } catch (Exception e) {
-                    out.put("ok", false);
-                    out.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+                    try {
+                        out.put("ok", false);
+                        out.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+                    } catch (org.json.JSONException ignored) { /* keep whatever we have */ }
                 }
                 final String payload = out.toString();
                 runOnUiThread(() -> web.evaluateJavascript(
