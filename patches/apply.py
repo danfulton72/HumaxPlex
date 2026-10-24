@@ -695,9 +695,66 @@ export function LiveTvScreen() {
     diagnostic.style.display='';
     diagnostic.querySelector('pre').textContent = 'TUNE REQUESTS (page 1)\\n' + lines.slice(0,25).join('\\n');
   }
+  let hdhrLineup = null, hdhrPending = null;
+  function tunerDeviceUri() {
+    for (const d of dvrs) {
+      const devices = d.Device || d.Devices || [];
+      for (const device of devices) {
+        if (typeof device.uri === 'string' && /\\/hdhr\\/?$/.test(device.uri)) return device.uri;
+      }
+    }
+    return '';
+  }
+  async function getHdhrLineup() {
+    if (hdhrLineup) return hdhrLineup;
+    const uri=tunerDeviceUri();
+    if (!uri) throw new Error('Plex DVR does not expose a Dispatcharr /hdhr device URL');
+    if (!window.HumaxVideo?.loadHdhrLineup) throw new Error('Native HDHomeRun lookup unavailable');
+    if (hdhrPending) return hdhrPending;
+    hdhrPending=new Promise((resolve,reject)=>{
+      const timeout=setTimeout(()=>{window.__humaxHdhrLineup=null;reject(new Error('HDHR lineup timed out'));},16000);
+      window.__humaxHdhrLineup=raw=>{
+        clearTimeout(timeout);
+        try {
+          const rows=JSON.parse(raw);
+          if (!Array.isArray(rows)) throw new Error(rows.error || 'Invalid HDHR lineup response');
+          hdhrLineup=rows;
+          resolve(rows);
+        } catch(err){reject(err);}
+        finally {window.__humaxHdhrLineup=null;}
+      };
+      HumaxVideo.loadHdhrLineup(uri);
+    });
+    try{return await hdhrPending;}finally{hdhrPending=null;}
+  }
+  async function playDispatcharr(e) {
+    const rows=await getHdhrLineup();
+    const ids=[e.channelVcn,e.channelId,e.gridKey,
+      e.item?.Media?.[0]?.channelVcn,e.item?.Media?.[0]?.channelIdentifier]
+      .filter(v=>v != null && String(v) !== '').map(String);
+    let candidate=rows.find(r=>ids.includes(String(r.GuideNumber)));
+    if (!candidate) {
+      const label=String(e.channel).replace(/^\\s*\\d+\\s+/,'').trim().toLowerCase();
+      candidate=rows.find(r=>String(r.GuideName || '').trim().toLowerCase()===label);
+    }
+    if (!candidate) throw new Error('No Dispatcharr lineup match for '+e.channel+
+      ' (ids '+ids.join(',')+'; '+rows.length+' available)');
+    const url=String(candidate.URL || '');
+    if (!/^https?:\\/\\//i.test(url)) throw new Error('Channel has no HTTP stream URL');
+    setText(details,'Opening Dispatcharr channel '+candidate.GuideNumber+' — '+candidate.GuideName);
+    HumaxVideo.open(url);
+    view='playing';
+    setText(info,'Live TV · Dispatcharr MPEG-TS · Back to close');
+  }
   async function tuneSelected() {
     const e = view === 'guide' ? guideChannel : entries[index];
     if (!e) return;
+    if (tunerDeviceUri()) {
+      setText(details,'Reading Dispatcharr HDHomeRun lineup…');
+      try { await playDispatcharr(e); }
+      catch(err) { setText(details,'Dispatcharr playback: '+err.message); }
+      return;
+    }
     const dvr = e.dvrId || String(dvrs[0]?.key || dvrs[0]?.id || '').replace(/^.*:/,'');
     const ids = [...new Set([e.channelId,e.channelVcn,e.gridKey,
       e.item?.Media?.[0]?.channelIdentifier,e.item?.Media?.[0]?.id]
