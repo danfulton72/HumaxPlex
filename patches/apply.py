@@ -704,15 +704,46 @@ export function LiveTvScreen() {
       return;
     }
     try {
+      // Plex Web and third-party clients differ in where PMS nests live
+      // session metadata. Capture the exact structural paths, safely.
+      function liveShape(value, path = 'root', depth = 0, out = []) {
+        if (depth > 7 || out.length > 80 || value == null) return out;
+        if (Array.isArray(value)) {
+          out.push(path + ': Array(' + value.length + ')');
+          value.slice(0,2).forEach((v,i)=>liveShape(v,path+'['+i+']',depth+1,out));
+        } else if (typeof value === 'object') {
+          Object.keys(value).slice(0,20).forEach(k=>{
+            if (/token|auth|secret|password|cookie/i.test(k)) return;
+            const v=value[k], where=path+'.'+k;
+            if (v && typeof v === 'object') liveShape(v,where,depth+1,out);
+            else if (/uuid|key|id|session|status|type/i.test(k))
+              out.push(where+' = '+String(v).slice(0,90));
+            else out.push(where+' : '+typeof v);
+          });
+        }
+        return out;
+      }
       const subscription=(data.MediaSubscription || data.MediaContainer?.MediaSubscription || [])[0];
-      const video=subscription?.MediaGrabOperation?.[0]?.Video;
-      const uuid=video?.Media?.[0]?.uuid || video?.Media?.[0]?.id;
+      const operation=subscription?.MediaGrabOperation?.[0];
+      const video=operation?.Video || subscription?.Video;
+      const sessionMedia=Array.isArray(video?.Media) ? video.Media[0] : video?.Media;
+      const uuid=sessionMedia?.uuid || sessionMedia?.id ||
+        operation?.Metadata?.Media?.[0]?.uuid;
       let key=uuid ? '/livetv/sessions/'+uuid : '';
       if (!key) {
-        setText(details,'Tune OK but Plex response has no live media UUID. '+
-          'Response fields: '+Object.keys(data).join(', ')+
-          ' · MediaSubscription: '+Boolean(subscription)+
-          ' · MediaGrabOperation: '+Boolean(subscription?.MediaGrabOperation?.length));
+        const shape=liveShape(data);
+        if (!diagnostic) {
+          diagnostic=h('div','humax-live-debug',el);
+          const heading=h('div','humax-debug-title',diagnostic);
+          heading.textContent='Plex tuning response · Back to return';
+          h('pre','humax-debug-content',diagnostic);
+        }
+        debugResponses=[{name:'Tune response shape',data:shape}];
+        diagnostic.style.display='';
+        view='tune-debug';
+        debugPage=0;
+        diagnostic.querySelector('pre').textContent=
+          'TUNE RESPONSE (NO UUID)\\n'+shape.slice(0,30).join('\\n');
         return;
       }
       if (!key || !key.startsWith('/')) {
@@ -791,6 +822,22 @@ export function LiveTvScreen() {
   return {
     el, name:'livetv', onShow(){ ambience.restore(); },
     onKey(action) {
+      if (view === 'tune-debug') {
+        if (action === 'down' || action === 'pagedown') {
+          debugPage=Math.min(3,debugPage+1);
+          diagnostic.querySelector('pre').textContent='TUNE RESPONSE · page '+(debugPage+1)+
+            '\\n'+debugResponses[0].data.slice(debugPage*25,(debugPage+1)*25).join('\\n');
+          return true;
+        }
+        if (action === 'up' || action === 'pageup') {
+          debugPage=Math.max(0,debugPage-1);
+          diagnostic.querySelector('pre').textContent='TUNE RESPONSE · page '+(debugPage+1)+
+            '\\n'+debugResponses[0].data.slice(debugPage*25,(debugPage+1)*25).join('\\n');
+          return true;
+        }
+        if (action === 'back') { diagnostic.style.display='none'; view='now'; return true; }
+        return true;
+      }
       if (view === 'debug') {
         if (action === 'pageup' || action === 'up' || action === 'left') { debugPage--; showDebug(); return true; }
         if (action === 'pagedown' || action === 'down' || action === 'right') { debugPage++; showDebug(); return true; }
