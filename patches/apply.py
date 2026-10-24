@@ -526,17 +526,16 @@ export function LiveTvScreen() {
       ' · OK to watch · Record key to schedule programme');
     // Scroll only the guide container, never the entire page. Keep the
     // sticky time heading visible and reveal row one when navigating up.
-    const selected=list.children[gridIndex+1];
-    if(gridIndex===0) list.scrollTop=0;
-    else if(selected) {
-      const headerHeight=head.offsetHeight+6;
-      const rowTop=selected.offsetTop-list.offsetTop;
-      const rowBottom=rowTop+selected.offsetHeight;
-      const top=list.scrollTop+headerHeight;
-      const bottom=list.scrollTop+list.clientHeight;
-      if(rowTop<top)list.scrollTop=Math.max(0,rowTop-headerHeight);
-      else if(rowBottom>bottom)list.scrollTop=rowBottom-list.clientHeight+8;
-    }
+    const rowHeight=list.children[gridIndex+1]?.getBoundingClientRect().height || 56;
+    const headHeight=head.getBoundingClientRect().height || 56;
+    const rowTop=headHeight+gridIndex*(rowHeight+3);
+    const rowBottom=rowTop+rowHeight;
+    const visibleTop=list.scrollTop+headHeight;
+    const visibleBottom=list.scrollTop+list.clientHeight-4;
+    if(gridIndex===0)list.scrollTop=0;
+    else if(rowTop<visibleTop)list.scrollTop=Math.max(0,rowTop-headHeight);
+    else if(rowBottom>visibleBottom)list.scrollTop=Math.max(0,rowBottom-list.clientHeight+4);
+    list.scrollTop=Math.min(list.scrollTop,Math.max(0,list.scrollHeight-list.clientHeight));
   }
   const epgPending = new Set();
   let epgRenderQueued = false;
@@ -1136,8 +1135,8 @@ export function LiveTvScreen() {
         if(action==='right'){gridSlot=Math.min(336,gridSlot+1);renderGrid();return true;}
         if(action==='enter'||action==='play'||action==='playpause'){tuneSelected();return true;}
         if(action==='record'||action==='red'){recordSelected();return true;}
-        if(action==='pageup'){gridSlot=Math.max(0,gridSlot-5);renderGrid();return true;}
-        if(action==='pagedown'){gridSlot=Math.min(336,gridSlot+5);renderGrid();return true;}
+        if(action==='pageup'){gridIndex=Math.max(0,gridIndex-10);renderGrid();fillGrid();return true;}
+        if(action==='pagedown'){gridIndex=Math.min(channelRows.length-1,gridIndex+10);renderGrid();fillGrid();return true;}
         if(action==='back')return false;
         return true;
       }
@@ -1226,7 +1225,9 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-epg-station {font-size:17px;}
 .humax-epg-cell {font-size:16px;}
 .humax-grid-active .humax-live-status {display:none !important;}
-.humax-live-list {top:175px !important;height:625px !important;max-height:625px !important;}
+.humax-grid-active .humax-live-list {top:50% !important;transform:translateY(-50%);height:610px !important;max-height:calc(100% - 170px) !important;overflow-y:auto !important;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:none;}
+.humax-grid-active .humax-epg-heading {position:sticky;top:0;z-index:5;}
+.humax-grid-active .humax-epg-line {scroll-margin-top:60px;}
 .humax-epg-heading,.humax-epg-line {margin-bottom:3px;}
 .humax-epg-station,.humax-epg-hour,.humax-epg-cell {box-sizing:border-box;height:53px;min-height:53px;padding:7px 9px;}
 """,encoding="utf-8")
