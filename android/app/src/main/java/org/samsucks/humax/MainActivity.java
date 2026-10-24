@@ -327,7 +327,7 @@ public final class MainActivity extends Activity {
                         new org.json.JSONArray(result);
                     } finally { conn.disconnect(); }
                 } catch (Exception e) {
-                    result = "{\\\"error\\\":" + org.json.JSONObject.quote(
+                    result = "{\"error\":" + org.json.JSONObject.quote(
                         e.getClass().getSimpleName()+": "+e.getMessage()) + "}";
                 }
                 final String payload = result;
