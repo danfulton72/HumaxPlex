@@ -233,18 +233,12 @@ public final class MainActivity extends Activity {
                 playbackError = null;
                 playbackKind = url.contains("/video/:/transcode/") ? "Plex HLS transcode" : (url.contains("/livetv/") ? "Live session" : "Direct media");
                 playbackStartedAt = android.os.SystemClock.uptimeMillis();
-                // Cap the decoder at 1080p: 4K / HDR HEVC channels in the Dispatcharr
-                // lineup would otherwise bind a decoder the Humax SoC can't fill and
-                // hang in buffering. Capping makes those fail fast so JS can fall back.
-                androidx.media3.exoplayer.DefaultLoadControl loadControl =
-                    new androidx.media3.exoplayer.DefaultLoadControl.Builder()
-                        .setMaxVideoSizeCap(1920, 1080)
-                        .setBufferDurationsMs(15000, 30000, 500, 2500)
-                        .build();
-                nativePlayer = new ExoPlayer.Builder(this)
-                    .setLoadControl(loadControl)
-                    .setUsePlatformDiagnostics(false)
-                    .build();
+                // Note: no artificial video-size cap here — Media3 has no per-player
+                // "max decode size" knob, and a bare live TS has no track selection to
+                // constrain. Undecodable channels (4K/HDR HEVC) are handled by the
+                // decode watchdog below (BUFFERING >8s => NATIVE_STALL => JS fallback),
+                // which fails fast instead of hanging.
+                nativePlayer = new ExoPlayer.Builder(MainActivity.this).build();
                 nativePlayer.setTrackSelectionParameters(nativePlayer.getTrackSelectionParameters()
                     .buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build());
                 nativeView = new PlayerView(MainActivity.this);
