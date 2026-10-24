@@ -290,10 +290,51 @@ public final class MainActivity extends Activity {
                         js("error", org.json.JSONObject.quote(error.getMessage() == null ? "Media3 playback failed" : error.getMessage()));
                     }
                 });
-                nativePlayer.setMediaItem(MediaItem.fromUri(url));
+                nativePlayer.setMediaItem(new MediaItem.Builder().setUri(url)
+                    .setMimeType(url.contains("/proxy/ts/") ? androidx.media3.common.MimeTypes.VIDEO_MP2T : null)
+                    .build());
                 nativePlayer.prepare();
                 nativePlayer.play();
             });
+        }
+        @JavascriptInterface public void loadHdhrLineup(String deviceUri) {
+            new Thread(() -> {
+                String result;
+                try {
+                    Uri base = Uri.parse(deviceUri);
+                    if (!"https".equalsIgnoreCase(base.getScheme()) &&
+                        !"http".equalsIgnoreCase(base.getScheme()))
+                        throw new IllegalArgumentException("Tuner URL must be HTTP(S)");
+                    String path = base.getPath() == null ? "" : base.getPath().replaceAll("/+$", "");
+                    if (!path.endsWith("/hdhr"))
+                        throw new IllegalArgumentException("Tuner URL does not end in /hdhr");
+                    URL endpoint = new URL(base.buildUpon().path(path + "/lineup.json").clearQuery().build().toString());
+                    HttpURLConnection conn = (HttpURLConnection) endpoint.openConnection();
+                    conn.setConnectTimeout(9000);
+                    conn.setReadTimeout(12000);
+                    conn.setInstanceFollowRedirects(false);
+                    int status = conn.getResponseCode();
+                    if (status != 200) throw new java.io.IOException("HDHR lineup HTTP " + status);
+                    try (InputStream stream = conn.getInputStream()) {
+                        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                        byte[] buffer = new byte[8192];
+                        int n;
+                        while ((n = stream.read(buffer)) != -1) {
+                            if (bytes.size() + n > 500000) throw new java.io.IOException("Lineup too large");
+                            bytes.write(buffer,0,n);
+                        }
+                        result = bytes.toString("UTF-8");
+                        new org.json.JSONArray(result);
+                    } finally { conn.disconnect(); }
+                } catch (Exception e) {
+                    result = new org.json.JSONObject().put("error",e.getClass().getSimpleName()+
+                        ": "+e.getMessage()).toString();
+                }
+                final String payload = result;
+                runOnUiThread(() -> web.evaluateJavascript(
+                    "window.__humaxHdhrLineup && window.__humaxHdhrLineup(" +
+                    org.json.JSONObject.quote(payload) + ")", null));
+            }).start();
         }
         @JavascriptInterface public void play() {
             runOnUiThread(() -> { if (nativePlayer != null) nativePlayer.play(); });
