@@ -481,7 +481,7 @@ export function LiveTvScreen() {
     const row=channelRows[gridIndex];
     if (!row) return null;
     const when=gridBase+gridSlot*SLOT+SLOT/2;
-    const programme=(guideCache.get(row.gridKey)||[]).find(m=>{
+    const programme=(guideCache.get(new Date(gridBase).toISOString().slice(0,10)+':'+row.gridKey)?.shows||[]).find(m=>{
       const start=toMillis(m);
       const end=Number(m.Media?.[0]?.endsAt || m.endsAt || 0)*1000 ||
         start+Number(m.duration || 1800000);
@@ -492,8 +492,7 @@ export function LiveTvScreen() {
   function renderGrid() {
     list.innerHTML='';
     const base=new Date(gridBase);
-    setText(info,'TV Guide · '+base.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+
-      ' · OK: Watch · Play: Watch · Record: Schedule · Right/Left: time · Up/Down: channel');
+    setText(info,'');
     const head=h('div','humax-epg-heading',list);
     h('div','humax-epg-station',head).textContent='CHANNEL';
     for(let n=0;n<slotsVisible;n++){
@@ -535,21 +534,45 @@ export function LiveTvScreen() {
       else if(rowBottom>bottom)list.scrollTop=rowBottom-list.clientHeight+8;
     }
   }
+  const epgPending = new Set();
+  let epgRenderQueued = false;
+  function queueGridRender() {
+    if(epgRenderQueued)return;
+    epgRenderQueued=true;
+    setTimeout(()=>{epgRenderQueued=false;if(alive&&view==='grid')renderGrid();},350);
+  }
   async function fillGrid() {
     const rows=channelRows.slice();
     const date=new Date(gridBase).toISOString().slice(0,10);
-    for (const row of rows) {
-      if (!alive) return;
-      if(!row.gridKey || guideCache.has(row.gridKey)) continue;
-      for (const prefix of providers) {
+    // Fetch visible channels first, then fill the remainder in the background.
+    const ordered=rows.slice(gridIndex,gridIndex+10).concat(
+      rows.slice(0,gridIndex),rows.slice(gridIndex+10));
+    let next=0;
+    async function worker() {
+      while(next<ordered.length && alive) {
+        const row=ordered[next++];
+        if(!row?.gridKey)continue;
+        const cacheKey=date+':'+row.gridKey;
+        const cached=guideCache.get(cacheKey);
+        if(cached && Date.now()-cached.time<15*60000)continue;
+        if(epgPending.has(cacheKey))continue;
+        epgPending.add(cacheKey);
         try {
-          const data=await server.get(prefix+'/grid',{channelGridKey:row.gridKey,date});
-          const shows=data.Metadata||data.Airing||data.Media||[];
-          if(shows.length) {guideCache.set(row.gridKey,shows);break;}
-        }catch(e){}
+          for(const prefix of providers) {
+            try {
+              const data=await server.get(prefix+'/grid',{channelGridKey:row.gridKey,date});
+              const shows=data.Metadata||data.Airing||data.Media||[];
+              if(shows.length) {
+                guideCache.set(cacheKey,{time:Date.now(),shows});
+                queueGridRender();
+                break;
+              }
+            }catch(e){}
+          }
+        }finally{epgPending.delete(cacheKey);}
       }
-      if(view==='grid')renderGrid();
     }
+    await Promise.all(Array.from({length:Math.min(6,ordered.length)},()=>worker()));
   }
   function activateGrid() {
     channelRows=entries.slice();
@@ -1197,7 +1220,10 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-epg-station,.humax-epg-hour,.humax-epg-cell {padding:9px 10px;min-height:43px;line-height:1.2;}
 .humax-epg-station {font-size:17px;}
 .humax-epg-cell {font-size:16px;}
-.humax-live-status {top:165px !important;}
+.humax-live-status {display:none !important;}
+.humax-live-list {top:175px !important;height:610px !important;max-height:610px !important;}
+.humax-epg-heading,.humax-epg-line {margin-bottom:3px;}
+.humax-epg-station,.humax-epg-hour,.humax-epg-cell {box-sizing:border-box;height:53px;min-height:53px;padding:7px 9px;}
 """,encoding="utf-8")
 
 print("Prepared HumaxPlex app assets at", dest)
