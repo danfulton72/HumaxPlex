@@ -41,7 +41,6 @@
 .hx-ch { width: 260px; box-sizing: border-box; border-radius: 12px; padding: 0 20px; display: flex; gap: 16px;
   align-items: center; background: #181B23; color: rgba(255,247,230,.85); flex: none; }
 .hx-row.sel .hx-ch { background: #2B3142; color: #FFF7E6; }
-.hx-num { font: 700 30px var(--display); min-width: 36px; }
 .hx-name { font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hx-track { flex: 1; position: relative; }
 .hx-prog { position: absolute; top: 0; bottom: 0; box-sizing: border-box; border-radius: 10px; padding: 11px 16px;
