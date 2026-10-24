@@ -16,6 +16,49 @@ Open `android/` in Android Studio. Configure Gradle 8.7 if required (this projec
 
 The script clones upstream SamSUCKS and applies Android-specific adaptations. Internet access is required. The original Plex UI remains copyright its authors and is licensed under GPL-3.0; see [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).
 
+## APK updates and permanent signing
+
+The GitHub Actions APK uses a persistent signing certificate and a version code
+derived from the GitHub Actions run number. **Four repository Actions secrets
+must be configured once before the workflow can produce an APK.** An APK signed
+with a different key cannot upgrade a previously installed APK.
+
+1. Generate a keystore on your computer (JDK 17 `keytool`):
+
+   ```bash
+   keytool -genkeypair -v -keystore humax-release.jks -alias humaxplex -keyalg RSA -keysize 3072 -validity 10000
+   ```
+
+   Choose strong passwords and back up `humax-release.jks` and the passwords
+   somewhere safe. Never commit the keystore to GitHub.
+
+2. Encode the keystore to one text line:
+
+   ```bash
+   python -c "import base64;print(base64.b64encode(open('humax-release.jks','rb').read()).decode())"
+   ```
+
+3. Open [Repository → Settings → Secrets and variables → Actions](https://github.com/danfulton72/HumaxPlex/settings/secrets/actions).
+   Create these **repository secrets**:
+
+   | Secret | Value |
+   | --- | --- |
+   | `HUMAX_KEYSTORE_BASE64` | Full base64 text from step 2 |
+   | `HUMAX_KEYSTORE_PASSWORD` | Password chosen for the keystore |
+   | `HUMAX_KEY_ALIAS` | `humaxplex` |
+   | `HUMAX_KEY_PASSWORD` | Password for the `humaxplex` key (often same as keystore password) |
+
+4. Select **Actions → Build HumaxPlex debug APK → Run workflow**.
+   Download the `HumaxPlex-debug-apk` artifact.
+
+You must uninstall the older, differently signed debug APK **once** before
+installing the first permanently signed build. Back up your app settings first
+if needed. Future builds signed with the **same keystore** can update in place
+without uninstalling. Do not regenerate the key: losing it prevents upgrades.
+
+The workflow deliberately fails when signing secrets are missing rather than
+silently making a differently signed APK.
+
 ## Caveats
 
 Android WebView HTML5 playback, CORS from Plex, TV remote keys and text entry may require further work. HLS playback is firmware-dependent. Do not assume the APK works until tested on your box. The device need not be rooted.
