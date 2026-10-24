@@ -511,10 +511,29 @@ export function LiveTvScreen() {
     list.innerHTML = '';
     entries.forEach(e => {
       const row = h('div', 'humax-live-row', list);
-      h('span', 'humax-live-channel', row).textContent = e.channel;
+      const chLabel = e.channel + (e._capCls ? capBadge(e._capCls) : '');
+      h('span', 'humax-live-channel', row).textContent = chLabel;
       h('span', 'humax-live-show', row).textContent = e.title;
     });
     focus();
+  }
+  // Background-pass: probe each visible channel's codec so the guide can show a
+  // native-vs-risky badge. Best-effort and non-blocking — failures just leave no badge.
+  async function probeAll() {
+    if (!tunerDeviceUri()) return;
+    let rows = [];
+    try { rows = await getHdhrLineup(); } catch (e) { return; }
+    for (const e of entries) {
+      if (!alive || view !== 'now') break;
+      const ids = [e.channelVcn, e.channelId, e.gridKey].filter(v => v != null && String(v) !== '').map(String);
+      const match = rows.find(r => ids.includes(String(r.GuideNumber)));
+      if (!match || !/^https?:\/\//i.test(String(match.URL || ''))) continue;
+      try {
+        const cap = await getCapability(match.GuideNumber, String(match.URL));
+        e._capCls = classify(cap);
+      } catch (err) { /* leave unbadged */ }
+    }
+    if (alive && view === 'now') render();
   }
   async function load() {
     setText(info, 'Checking Plex DVR and programme guide…');
@@ -600,6 +619,7 @@ export function LiveTvScreen() {
       }
       setText(info, entries.length + ' programmes on now · OK: guide · Left: diagnostics · Right: recordings');
       render();
+      probeAll(); // best-effort codec badges in the background
     } catch (e) {
       setText(info, 'Live TV unavailable: ' + e.message);
     }
@@ -696,6 +716,41 @@ export function LiveTvScreen() {
     diagnostic.querySelector('pre').textContent = 'TUNE REQUESTS (page 1)\\n' + lines.slice(0,25).join('\\n');
   }
   let hdhrLineup = null, hdhrPending = null;
+  // Capability cache: GuideNumber -> {hevc,h264} from native probeStream sniff.
+  const capCache = new Map();
+  function probeCapability(url) {
+    if (!window.HumaxVideo?.probeStream) return Promise.resolve({ ok:false, error:'no probe support' });
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => { window.__humaxProbe = null; resolve({ ok:false, error:'probe timed out' }); }, 15000);
+      window.__humaxProbe = (raw) => {
+        clearTimeout(timeout);
+        try { resolve(JSON.parse(raw)); } catch (e) { resolve({ ok:false, error:String(e) }); }
+        finally { window.__humaxProbe = null; }
+      };
+      HumaxVideo.probeStream(url);
+    });
+  }
+  async function getCapability(guideNum, url) {
+    if (capCache.has(String(guideNum))) return capCache.get(String(guideNum));
+    const p = await probeCapability(url);
+    const cap = { hevc: !!p.hevc, h264: !!p.h264, ok: !!p.ok };
+    capCache.set(String(guideNum), cap);
+    return cap;
+  }
+  // Classify a channel for this box. H.264 is always native-safe; HEVC 8-bit 1080p is
+  // "maybe" (many TV SoCs decode it); anything else or unknown is risky.
+  function classify(cap) {
+    if (!cap || !cap.ok) return 'unknown';
+    if (cap.h264 && !cap.hevc) return 'safe';
+    if (cap.hevc) return 'maybe';
+    return 'risky';
+  }
+  function capBadge(cls) {
+    if (cls === 'safe') return ' · H.264 ✓';
+    if (cls === 'maybe') return ' · HEVC ⚠';
+    if (cls === 'risky') return ' · risky ⚠';
+    return '';
+  }
   function tunerDeviceUri() {
     for (const d of dvrs) {
       const devices = d.Device || d.Devices || [];
@@ -741,10 +796,44 @@ export function LiveTvScreen() {
       ' (ids '+ids.join(',')+'; '+rows.length+' available)');
     const url=String(candidate.URL || '');
     if (!/^https?:\\/\\//i.test(url)) throw new Error('Channel has no HTTP stream URL');
-    setText(details,'Opening Dispatcharr channel '+candidate.GuideNumber+' — '+candidate.GuideName);
+
+    // Probe this channel's codec so we can gate playback and pick the best variant.
+    setText(details,'Probing '+candidate.GuideName+'…');
+    const cap=await getCapability(candidate.GuideNumber,url);
+    const cls=classify(cap);
+    e._capCls=cls;
+
+    // Auto-pick: if this variant is risky (HEVC/4K/HDR), look for a same-channel
+    // sibling in the lineup that probes as H.264-safe before giving up on native.
+    if (cls==='risky') {
+      const baseName=String(candidate.GuideName||'').replace(/^(UK\| )/,'').split(/\s+(UHD|FHD|HD)\b/i)[0].toLowerCase();
+      const alt=rows.find(r=>r!==candidate && /^https?:\/\//i.test(String(r.URL||'')) &&
+        String(r.GuideName||'').toLowerCase().includes(baseName));
+      if (alt) {
+        const altCap=await getCapability(alt.GuideNumber,String(alt.URL));
+        if (classify(altCap)==='safe') {
+          setText(details,'Switched to H.264 variant of '+baseName);
+          return openNative(String(alt.URL), alt.GuideName, 'safe');
+        }
+      }
+      setText(details,'Channel '+candidate.GuideName+' needs HEVC/4K decode — attempting native (may fail)');
+    }
+    return openNative(url, candidate.GuideName, cls);
+  }
+  function openNative(url, name, cls) {
+    // Install a one-shot native error hook so a decode failure (or the 8s stall
+    // watchdog) is surfaced honestly instead of leaving a black frozen frame.
+    window.__humaxLivePlayError = (msg) => {
+      if (view !== 'playing') return;
+      const stalled = String(msg).indexOf('NATIVE_STALL') !== -1;
+      setText(details, stalled
+        ? 'This channel could not be decoded on this box (no video after 8s). Try an H.264 channel (✓ badge).'
+        : 'Playback failed: ' + msg);
+      setText(info, 'Live TV · playback error · Back to close');
+    };
     HumaxVideo.open(url);
     view='playing';
-    setText(info,'Live TV · Dispatcharr MPEG-TS · Back to close');
+    setText(info,'Live TV · '+name+' · '+(cls==='safe'?'H.264':cls==='maybe'?'HEVC':'risky')+' · Back to close');
   }
   async function tuneSelected() {
     const e = view === 'guide' ? guideChannel : entries[index];

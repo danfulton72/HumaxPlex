@@ -233,7 +233,18 @@ public final class MainActivity extends Activity {
                 playbackError = null;
                 playbackKind = url.contains("/video/:/transcode/") ? "Plex HLS transcode" : (url.contains("/livetv/") ? "Live session" : "Direct media");
                 playbackStartedAt = android.os.SystemClock.uptimeMillis();
-                nativePlayer = new ExoPlayer.Builder(MainActivity.this).build();
+                // Cap the decoder at 1080p: 4K / HDR HEVC channels in the Dispatcharr
+                // lineup would otherwise bind a decoder the Humax SoC can't fill and
+                // hang in buffering. Capping makes those fail fast so JS can fall back.
+                androidx.media3.exoplayer.DefaultLoadControl loadControl =
+                    new androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                        .setMaxVideoSizeCap(1920, 1080)
+                        .setBufferDurationsMs(15000, 30000, 500, 2500)
+                        .build();
+                nativePlayer = new ExoPlayer.Builder(this)
+                    .setLoadControl(loadControl)
+                    .setUsePlatformDiagnostics(false)
+                    .build();
                 nativePlayer.setTrackSelectionParameters(nativePlayer.getTrackSelectionParameters()
                     .buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build());
                 nativeView = new PlayerView(MainActivity.this);
@@ -263,10 +274,30 @@ public final class MainActivity extends Activity {
                 diagnostics.bringToFront();
                 web.requestFocus();
                 nativePlayer.addListener(new Player.Listener() {
+                    private long bufferSince = 0;
                     @Override public void onPlaybackStateChanged(int state) {
-                        if (state == Player.STATE_READY) js("ready", "null");
-                        else if (state == Player.STATE_ENDED) js("end", "null");
-                        else if (state == Player.STATE_BUFFERING) js("buffer", "true");
+                        if (state == Player.STATE_READY) {
+                            bufferSince = 0;
+                            js("ready", "null");
+                        } else if (state == Player.STATE_ENDED) {
+                            js("end", "null");
+                        } else if (state == Player.STATE_BUFFERING) {
+                            if (bufferSince == 0) bufferSince = android.os.SystemClock.uptimeMillis();
+                            // Decode watchdog: a live TS that can't be decoded sits in
+                            // BUFFERING forever. After 8s, tell JS native failed so it
+                            // can run its fallback ladder instead of hanging.
+                            if (bufferSince > 0 &&
+                                android.os.SystemClock.uptimeMillis() - bufferSince > 8000) {
+                                bufferSince = 0;
+                                playbackError = "Native decode stalled (no video after 8s)";
+                                showPlaybackHud();
+                                js("error", org.json.JSONObject.quote("NATIVE_STALL"));
+                                web.evaluateJavascript(
+                                    "window.__humaxLivePlayError && window.__humaxLivePlayError(\"NATIVE_STALL\")", null);
+                            } else {
+                                js("buffer", "true");
+                            }
+                        }
                     }
                     @Override public void onIsPlayingChanged(boolean playing) {
                         setPlaybackAwake(playing);
@@ -288,6 +319,11 @@ public final class MainActivity extends Activity {
                         }
                         showPlaybackHud();
                         js("error", org.json.JSONObject.quote(error.getMessage() == null ? "Media3 playback failed" : error.getMessage()));
+                        // Also notify the Live TV screen's own error hook (it drives
+                        // playback directly, not through the SamSUCKS player listener).
+                        web.evaluateJavascript(
+                            "window.__humaxLivePlayError && window.__humaxLivePlayError(" +
+                            org.json.JSONObject.quote(playbackError) + ")", null);
                     }
                 });
                 nativePlayer.setMediaItem(new MediaItem.Builder().setUri(url)
@@ -333,6 +369,57 @@ public final class MainActivity extends Activity {
                 final String payload = result;
                 runOnUiThread(() -> web.evaluateJavascript(
                     "window.__humaxHdhrLineup && window.__humaxHdhrLineup(" +
+                    org.json.JSONObject.quote(payload) + ")", null));
+            }).start();
+        }
+        // Lightweight capability probe: sample the first ~1.5 MB of a live TS and sniff
+        // for video codec NAL markers + max resolution, so JS can decide native vs
+        // risky before committing to a full ExoPlayer decode. Returns a JSON object via
+        // window.__humaxProbe. No audio/subtitle detail — just enough to gate playback.
+        @JavascriptInterface public void probeStream(String url) {
+            new Thread(() -> {
+                org.json.JSONObject out = new org.json.JSONObject();
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                    conn.setConnectTimeout(9000);
+                    conn.setReadTimeout(12000);
+                    conn.setInstanceFollowRedirects(true);
+                    int status = conn.getResponseCode();
+                    if (status != 200) throw new java.io.IOException("probe HTTP " + status);
+                    byte[] buf = new byte[8192];
+                    boolean hevc = false, h264 = false, sawPps = false;
+                    int total = 0;
+                    try (InputStream in = conn.getInputStream()) {
+                        int n;
+                        while ((n = in.read(buf)) != -1) {
+                            total += n;
+                            for (int i = 0; i < n - 4; i++) {
+                                // MPEG-TS sync byte 0x47 followed by an H.264 Annex-B start code
+                                if (buf[i] == (byte)0x47 && buf[i+1] == 0 && buf[i+2] == 0 && buf[i+3] == 1) {
+                                    int nalType = buf[i+4] & 0x1F;
+                                    if (nalType >= 1 && nalType <= 5) h264 = true;
+                                    else if (nalType == 7) sawPps = true;
+                                }
+                                // HEVC length-prefixed or Annex-B VPS/SPS/PPS (types 32-34)
+                                if (buf[i] == (byte)0x47 && buf[i+1] == 0 && buf[i+2] == 0 && buf[i+3] == 1) {
+                                    int t = buf[i+4] & 0x3F;
+                                    if (t >= 32 && t <= 34) hevc = true;
+                                }
+                            }
+                            if (total > 1500000) break;
+                        }
+                    } finally { conn.disconnect(); }
+                    out.put("ok", true);
+                    out.put("hevc", hevc);
+                    out.put("h264", h264 || sawPps);
+                    out.put("bytes", total);
+                } catch (Exception e) {
+                    out.put("ok", false);
+                    out.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+                }
+                final String payload = out.toString();
+                runOnUiThread(() -> web.evaluateJavascript(
+                    "window.__humaxProbe && window.__humaxProbe(" +
                     org.json.JSONObject.quote(payload) + ")", null));
             }).start();
         }
