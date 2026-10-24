@@ -586,6 +586,7 @@ public final class MainActivity extends Activity {
             case KeyEvent.KEYCODE_MEDIA_STOP: return "stop";
             case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD: return "ff";
             case KeyEvent.KEYCODE_MEDIA_REWIND: return "rw";
+            case KeyEvent.KEYCODE_MEDIA_RECORD: case KeyEvent.KEYCODE_PROG_RED: case KeyEvent.KEYCODE_R: return "record";
             case KeyEvent.KEYCODE_CHANNEL_UP: return "pageup";
             case KeyEvent.KEYCODE_CHANNEL_DOWN: return "pagedown";
             default: return null;
