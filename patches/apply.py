@@ -457,6 +457,9 @@ import { useAmbience } from '../ui/backdrop.js';
 import * as router from '../router.js';
 import { identity } from '../plex/client.js';
 
+// Reuse EPG results when the screen is reopened during the same app session.
+const sharedGuideCache = new Map();
+
 export function LiveTvScreen() {
   const el = h('div', 'screen settings humax-live');
   const ambience = useAmbience();
@@ -466,7 +469,7 @@ export function LiveTvScreen() {
   const details = h('div', 'humax-live-detail', el);
   let entries = [], index = 0, busy = false, alive = true;\n  let providers = [], dayOffset = 0, view = 'now', guideChannel = null, dvrs = [];
   let debugResponses = [], diagnostic = null, debugPage = 0;
-  let channelRows = [], gridIndex = 0, gridSlot = 0, gridBase = 0, guideCache = new Map();
+  let channelRows = [], gridIndex = 0, gridSlot = 0, gridBase = 0, guideCache = sharedGuideCache;
   const SLOT = 30*60000;
   const slotsVisible = 5;
   function toMillis(m) {
@@ -1221,7 +1224,7 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-epg-station {font-size:17px;}
 .humax-epg-cell {font-size:16px;}
 .humax-live-status {display:none !important;}
-.humax-live-list {top:175px !important;height:610px !important;max-height:610px !important;}
+.humax-live-list {top:175px !important;height:625px !important;max-height:625px !important;}
 .humax-epg-heading,.humax-epg-line {margin-bottom:3px;}
 .humax-epg-station,.humax-epg-hour,.humax-epg-cell {box-sizing:border-box;height:53px;min-height:53px;padding:7px 9px;}
 """,encoding="utf-8")
