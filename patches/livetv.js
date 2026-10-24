@@ -453,7 +453,7 @@ export function LiveTvScreen() {
 
   // ---- diagnostics ----------------------------------------------------------
 
-  const allowed = /^(type|title|grandparentTitle|channelTitle|channelCallSign|channelName|channelIdentifier|channelVcn|channelNumber|gridKey|guideKey|ratingKey|key|id|identifier|source|providerIdentifier|epgSource|beginsAt|endsAt|startTime|duration|onAir|Media|Channel|Metadata|Airing|Directory|Dvr|DVR|MediaProvider|Feature|totalSize|size|status|protocol|decision|mediaType|partIndex|index)$/;
+  const allowed = /^(type|title|grandparentTitle|channelTitle|channelCallSign|channelName|channelIdentifier|channelVcn|channelNumber|gridKey|guideKey|ratingKey|key|id|identifier|source|providerIdentifier|epgSource|beginsAt|endsAt|startTime|duration|onAir|Media|Channel|Metadata|Airing|Directory|Dvr|DVR|MediaProvider|Feature|totalSize|size|status|protocol|decision|mediaType|partIndex|index|SubscriptionTemplate|MediaSubscription|targetLibrarySectionID|targetSectionLocationID|parameters|airingsType|selected|Setting|librarySectionTitle|locationPath|value|default|guid)$/;
   function safeObject(value, depth = 0) {
     if (depth > 3) return '[nested]';
     if (Array.isArray(value)) return value.slice(0, 3).map(v => safeObject(v, depth + 1));
@@ -494,6 +494,7 @@ export function LiveTvScreen() {
         programmeAtCursor: sel.programme ? safeObject(sel.programme) : 'none',
         totalCachedDays: guideCache.size,
       } : 'n/a'],
+      ['Recording template', lastTemplate ? safeObject(lastTemplate) : 'none yet — press Record on a programme'],
       ['Plex DVRs', dvrs.map(d => safeObject(d))],
       ['EPG providers', providers],
       ...debugResponses.map((r, i) => ['Endpoint ' + (i + 1) + ' ' + r.name, r.data]),
@@ -709,39 +710,184 @@ export function LiveTvScreen() {
       throw new Error('Plex status ' + result.status + ': ' + String(result.message || 'No error explanation').slice(0, 180));
     return result;
   }
+  // Recording follows Plex's own model: the template lists what can be recorded
+  // (this airing, all episodes, …) and each choice must be saved into a library
+  // of the right kind (movie or TV) and one of its folders.
+  let dlg = null, dlgEl = null, d = {}, lastTemplate = null;
+  const REC_PREF = 'humaxRecordLibrary:';
+  function prefGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function prefSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+  function libraryKind(opt) { return Number(opt?.type) === 1 ? 'movie' : 'show'; }
+  function librariesFor(opt, sections) {
+    const kind = libraryKind(opt);
+    const out = [];
+    for (const sec of sections.filter(x => x.type === kind)) {
+      const locs = (sec.Location || []).filter(l => l && l.id != null);
+      if (!locs.length) out.push({ sectionId: String(sec.key), title: sec.title, locId: '', path: '' });
+      for (const loc of locs) out.push({ sectionId: String(sec.key), title: sec.title, locId: String(loc.id), path: loc.path || '' });
+    }
+    return out;
+  }
+  function defaultLibrary(opt, libs) {
+    const byTemplate = libs.findIndex(l => String(opt.targetLibrarySectionID || '') === l.sectionId &&
+      (!opt.targetSectionLocationID || String(opt.targetSectionLocationID) === l.locId));
+    if (byTemplate >= 0) return byTemplate;
+    const saved = prefGet(REC_PREF + libraryKind(opt));
+    const bySaved = libs.findIndex(l => l.sectionId + ':' + l.locId === saved);
+    return bySaved >= 0 ? bySaved : 0;
+  }
+  function buildDialog() {
+    dlgEl = h('div', 'hx-dialog', el);
+    const box = h('div', 'hx-dlg', dlgEl);
+    h('div', 'hx-dlg-eyebrow', box).textContent = 'RECORD';
+    d.title = h('h2', 'hx-dlg-title', box);
+    d.sub = h('div', 'hx-dlg-sub', box);
+    const field = label => {
+      const row = h('div', 'hx-field', box);
+      h('div', 'hx-field-label', row).textContent = label;
+      const mid = h('div', 'hx-field-mid', row);
+      const value = h('div', 'hx-field-value', mid);
+      const note = h('div', 'hx-field-note', mid);
+      h('div', 'hx-field-arrows', row).textContent = '◀ ▶';
+      return { row, value, note };
+    };
+    d.what = field('WHAT');
+    d.where = field('SAVE TO');
+    const buttons = h('div', 'hx-dlg-buttons', box);
+    d.ok = h('div', 'hx-btn', buttons); d.ok.textContent = 'Record';
+    d.cancel = h('div', 'hx-btn', buttons); d.cancel.textContent = 'Cancel';
+    d.status = h('div', 'hx-dlg-status', box);
+    h('div', 'hx-dlg-hint', box).textContent = '▲▼ choose · ◀▶ change · OK confirm · Back cancel';
+  }
+  function renderDialog() {
+    if (!dlgEl) buildDialog();
+    dlgEl.style.display = '';
+    const opt = dlg.opts[dlg.optIdx];
+    const lib = dlg.libs[dlg.libIdx];
+    d.title.textContent = dlg.title;
+    d.sub.textContent = dlg.when;
+    d.what.value.textContent = opt ? (opt.title || 'Record') : '';
+    d.what.note.textContent = dlg.opts.length > 1 ? (dlg.optIdx + 1) + ' of ' + dlg.opts.length + (opt?.airingsType ? ' · ' + opt.airingsType : '') :
+      (opt?.airingsType || '');
+    d.where.value.textContent = lib ? lib.title : 'No ' + (libraryKind(opt) === 'movie' ? 'movie' : 'TV') + ' library in Plex';
+    d.where.note.textContent = lib ? (lib.path + (dlg.libs.length > 1 ? '  ·  ' + (dlg.libIdx + 1) + ' of ' + dlg.libs.length : '')) :
+      'Add one in Plex Media Server, then try again';
+    d.what.row.classList.toggle('focus', dlg.focus === 0);
+    d.where.row.classList.toggle('focus', dlg.focus === 1);
+    d.ok.classList.toggle('focus', dlg.focus === 2 && dlg.btn === 0);
+    d.cancel.classList.toggle('focus', dlg.focus === 2 && dlg.btn === 1);
+    d.ok.classList.toggle('disabled', !lib || dlg.busy);
+    d.status.textContent = dlg.status || '';
+  }
+  function closeDialog() {
+    if (dlgEl) dlgEl.style.display = 'none';
+    if (dlg) view = dlg.returnTo;
+    dlg = null;
+  }
   async function recordSelected() {
     const selected = view === 'grid' ? selectedGrid() : null;
     const m = selected?.programme || (view === 'guide' ? entries[index]?.item : null);
-    const title = m ? titleOf(m) : selected?.row?.title;
     if (!m) { say('No programme selected for recording'); return; }
-    const guid = m.guid;
-    const ratingKey = m.ratingKey;
-    if (!guid && !ratingKey) {
-      say('Plex EPG lacks programme GUID/rating key; cannot create DVR rule.'); return;
-    }
-    if (!window.confirm('Schedule Plex recording: ' + title + '?')) return;
-    say('Checking Plex recording template for ' + title + '…');
+    if (!m.guid && !m.ratingKey) { say('Plex EPG lacks a programme GUID; cannot create a recording.'); return; }
+    const { start, end } = airingBounds(m);
+    const row = selected?.row || guideChannel;
+    say('Getting recording options for ' + titleOf(m) + '…');
     try {
-      const template = await server.get('/media/subscriptions/template', guid ? { guid } : { ratingKey });
-      const t = (template.SubscriptionTemplate || template.MediaSubscription || [])[0];
-      if (!t) throw new Error('No DVR recording template returned');
-      const target = t.targetLibrarySectionID || t.targetSectionID;
-      if (!target || t.type == null) throw new Error('Recording destination/type missing');
-      const params = {
-        targetLibrarySectionID: target,
-        type: t.type,
-        hints: JSON.stringify({ ratingKey: String(ratingKey || ''), guid: String(guid || '') }),
+      const [template, sections] = await Promise.all([
+        server.get('/media/subscriptions/template', m.guid ? { guid: m.guid } : { ratingKey: m.ratingKey }),
+        server.sections(),
+      ]);
+      lastTemplate = template;
+      const opts = template.SubscriptionTemplate?.[0]?.MediaSubscription || template.MediaSubscription || [];
+      if (!opts.length) throw new Error('Plex returned no recording options for this programme');
+      if (view !== 'grid' && view !== 'guide') return;
+      const optIdx = Math.max(0, opts.findIndex(o => o.selected));
+      const libs = librariesFor(opts[optIdx], sections);
+      dlg = {
+        m, opts, optIdx, sections, libs, libIdx: defaultLibrary(opts[optIdx], libs),
+        focus: libs.length ? 2 : 1, btn: 0, busy: false, status: '', returnTo: view,
+        title: mainTitle(m),
+        when: [row ? channelLabel(row.name || row.channel) : '', (localDate(start) === localDate(Date.now()) ? '' : dayLabel(start) + ' ') +
+          hhmm(start) + ' – ' + hhmm(end), subTitle(m)].filter(Boolean).join('  ·  '),
       };
-      if (t.targetSectionLocationID) params.targetSectionLocationID = t.targetSectionLocationID;
-      if (t.params?.mediaProviderID) params['params[mediaProviderID]'] = t.params.mediaProviderID;
-      const result = await dvrPost('/media/subscriptions', params);
-      const subs = result.MediaSubscription || [];
+      say('');
+      view = 'record';
+      renderDialog();
+    } catch (err) { say('Recording not available: ' + err.message); }
+  }
+  function changeDialog(delta) {
+    if (dlg.focus === 0 && dlg.opts.length > 1) {
+      dlg.optIdx = (dlg.optIdx + delta + dlg.opts.length) % dlg.opts.length;
+      const opt = dlg.opts[dlg.optIdx];
+      const prev = dlg.libs[dlg.libIdx];
+      dlg.libs = librariesFor(opt, dlg.sections);
+      const same = prev ? dlg.libs.findIndex(l => l.sectionId === prev.sectionId && l.locId === prev.locId) : -1;
+      dlg.libIdx = same >= 0 ? same : defaultLibrary(opt, dlg.libs);
+    } else if (dlg.focus === 1 && dlg.libs.length > 1) {
+      dlg.libIdx = (dlg.libIdx + delta + dlg.libs.length) % dlg.libs.length;
+    } else if (dlg.focus === 2) {
+      dlg.btn = dlg.btn ? 0 : 1;
+    }
+    dlg.status = '';
+    renderDialog();
+  }
+  // Query for POST /media/subscriptions: the option's own parameter string,
+  // plus the chosen library/folder and the option's default preferences.
+  function subscriptionParams(opt, lib, m) {
+    const params = {};
+    if (opt.parameters) new URLSearchParams(String(opt.parameters)).forEach((v, k) => { params[k] = v; });
+    else {
+      params.type = opt.type;
+      if (m.guid) params['hints[guid]'] = m.guid;
+      if (m.ratingKey) params['hints[ratingKey]'] = m.ratingKey;
+      params['hints[title]'] = titleOf(m);
+    }
+    params.targetLibrarySectionID = lib.sectionId;
+    if (lib.locId) params.targetSectionLocationID = lib.locId;
+    for (const st of opt.Setting || []) {
+      const value = st.value ?? st.default;
+      const key = 'prefs[' + st.id + ']';
+      if (st.id && value != null && value !== '' && !(key in params)) params[key] = String(value);
+    }
+    return params;
+  }
+  async function submitRecording() {
+    if (!dlg || dlg.busy) return;
+    const opt = dlg.opts[dlg.optIdx], lib = dlg.libs[dlg.libIdx], m = dlg.m;
+    if (!lib) { dlg.status = 'Choose a library to save into.'; renderDialog(); return; }
+    dlg.busy = true; dlg.status = 'Scheduling…'; renderDialog();
+    try {
+      await dvrPost('/media/subscriptions', subscriptionParams(opt, lib, m));
+      prefSet(REC_PREF + libraryKind(opt), lib.sectionId + ':' + lib.locId);
       if (m.guid) scheduledGuids.add(m.guid);
+      if (Number(opt.type) !== 4 && m.grandparentGuid) scheduledGuids.add(m.grandparentGuid);
+      const what = opt.title || 'Recording';
+      closeDialog();
       if (view === 'grid') renderGrid();
       loadScheduled();
-      say('Plex recording rule created for ' + title +
-        (subs[0]?.key ? ' · rule ' + subs[0].key : '') + ' · Blue shows the schedule');
-    } catch (err) { say('Recording not scheduled: ' + err.message); }
+      say(what + ' scheduled: ' + mainTitle(m) + ' → ' + lib.title + ' · Blue shows recordings');
+    } catch (err) {
+      if (!dlg) return;
+      dlg.busy = false;
+      dlg.status = 'Not scheduled: ' + err.message;
+      renderDialog();
+    }
+  }
+  function dialogKey(action) {
+    switch (action) {
+      case 'up': dlg.focus = Math.max(0, dlg.focus - 1); renderDialog(); return true;
+      case 'down': dlg.focus = Math.min(2, dlg.focus + 1); renderDialog(); return true;
+      case 'left': changeDialog(-1); return true;
+      case 'right': changeDialog(1); return true;
+      case 'enter':
+        if (dlg.focus < 2) { dlg.focus++; renderDialog(); }
+        else if (dlg.btn === 0) submitRecording();
+        else closeDialog();
+        return true;
+      case 'record': case 'red': submitRecording(); return true;
+      case 'back': closeDialog(); return true;
+      default: return true;
+    }
   }
 
   // ---- playback -----------------------------------------------------------------
@@ -1005,6 +1151,7 @@ export function LiveTvScreen() {
           default: return true;
         }
       }
+      if (view === 'record') return dlg ? dialogKey(action) : true;
       if (view === 'tune-debug') {
         if (action === 'down' || action === 'pagedown') { debugPage = Math.min(Math.floor((tuneReport.length - 1) / 25), debugPage + 1); renderTuneReport(); return true; }
         if (action === 'up' || action === 'pageup') { debugPage = Math.max(0, debugPage - 1); renderTuneReport(); return true; }

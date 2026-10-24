@@ -69,3 +69,28 @@
   transform: translateX(-50%); max-width: 1200px; max-height: none; padding: 16px 28px; border-radius: 14px;
   background: #2B3142; color: #FFF7E6; font-size: 22px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
 .humax-grid-active .humax-live-detail:empty { display: none; }
+
+/* Record dialog: what to record and which library/folder to save it in. */
+.hx-dialog { position: absolute; inset: 0; z-index: 20; background: rgba(5,7,10,.74);
+  display: flex; align-items: center; justify-content: center; }
+.hx-dlg { width: 960px; box-sizing: border-box; background: #181B23; border-radius: 24px; padding: 40px 48px;
+  display: flex; flex-direction: column; gap: 16px; color: #FFF7E6; font-family: var(--body);
+  box-shadow: 0 24px 80px rgba(0,0,0,.6); }
+.hx-dlg-eyebrow { font-size: 18px; font-weight: 600; letter-spacing: 3px; color: var(--coral); }
+.hx-dlg-title { margin: 0; font: 700 52px/1.1 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hx-dlg-sub { font-size: 20px; color: rgba(255,247,230,.72); margin-bottom: 8px; }
+.hx-field { display: flex; align-items: center; gap: 24px; padding: 16px 24px; border-radius: 14px; background: #11141B; }
+.hx-field.focus { background: #FFF7E6; color: #0B0D12; box-shadow: 0 0 0 3px var(--coral); }
+.hx-field-label { width: 140px; flex: none; font-size: 17px; font-weight: 600; letter-spacing: 2px; opacity: .7; }
+.hx-field-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.hx-field-value { font-size: 26px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hx-field-note { font-size: 17px; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hx-field-note:empty { display: none; }
+.hx-field-arrows { font-size: 20px; opacity: .55; }
+.hx-dlg-buttons { display: flex; gap: 14px; margin-top: 10px; }
+.hx-btn { font-size: 22px; font-weight: 600; padding: 14px 36px; border-radius: 12px; background: rgba(255,247,230,.12); }
+.hx-btn.focus { background: #FFF7E6; color: #0B0D12; box-shadow: 0 0 0 3px var(--coral); }
+.hx-btn.disabled { opacity: .45; }
+.hx-dlg-status { font-size: 20px; color: #FFD9D6; min-height: 26px; }
+.hx-dlg-status:empty { min-height: 0; }
+.hx-dlg-hint { font-size: 17px; color: rgba(255,247,230,.6); }
