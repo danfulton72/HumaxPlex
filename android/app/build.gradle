@@ -6,8 +6,9 @@ android {
         applicationId 'org.samsucks.humax'
         minSdk 28
         targetSdk 28
-        versionCode (System.getenv('GITHUB_RUN_NUMBER') ?: '5').toInteger() + 1000
-        versionName "0.2.${System.getenv('GITHUB_RUN_NUMBER') ?: '0'}"
+        def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '5').toString()
+        versionCode (runNumber.isInteger() ? runNumber.toInteger() : 5) + 1000
+        versionName "0.2.${runNumber}"
     }
     signingConfigs {
         persistent {
