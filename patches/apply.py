@@ -493,6 +493,7 @@ export function LiveTvScreen() {
     return {row,programme};
   }
   function renderGrid() {
+    el.classList.add('humax-grid-active');
     list.innerHTML='';
     const base=new Date(gridBase);
     setText(info,'');
@@ -654,6 +655,7 @@ export function LiveTvScreen() {
     if (alive && view === 'grid') renderGrid();
   }
   async function load() {
+    el.classList.remove('humax-grid-active');
     setText(info, 'Checking Plex DVR and programme guide…');
     try {
       const d = await server.get('/livetv/dvrs');
@@ -1223,7 +1225,7 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-epg-station,.humax-epg-hour,.humax-epg-cell {padding:9px 10px;min-height:43px;line-height:1.2;}
 .humax-epg-station {font-size:17px;}
 .humax-epg-cell {font-size:16px;}
-.humax-live-status {display:none !important;}
+.humax-grid-active .humax-live-status {display:none !important;}
 .humax-live-list {top:175px !important;height:625px !important;max-height:625px !important;}
 .humax-epg-heading,.humax-epg-line {margin-bottom:3px;}
 .humax-epg-station,.humax-epg-hour,.humax-epg-cell {box-sizing:border-box;height:53px;min-height:53px;padding:7px 9px;}
