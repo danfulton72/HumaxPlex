@@ -704,10 +704,16 @@ export function LiveTvScreen() {
       return;
     }
     try {
-      let key=playablePath(data);
+      const subscription=(data.MediaSubscription || data.MediaContainer?.MediaSubscription || [])[0];
+      const video=subscription?.MediaGrabOperation?.[0]?.Video;
+      const uuid=video?.Media?.[0]?.uuid || video?.Media?.[0]?.id;
+      let key=uuid ? '/livetv/sessions/'+uuid : '';
       if (!key) {
-        const sessions=await server.get('/livetv/sessions');
-        key=playablePath(sessions);
+        setText(details,'Tune OK but Plex response has no live media UUID. '+
+          'Response fields: '+Object.keys(data).join(', ')+
+          ' · MediaSubscription: '+Boolean(subscription)+
+          ' · MediaGrabOperation: '+Boolean(subscription?.MediaGrabOperation?.length));
+        return;
       }
       if (!key || !key.startsWith('/')) {
         setText(details,'Tune OK ('+results.join(', ')+'), no playable media key. '+JSON.stringify(safeObject(data)).slice(0,400));
@@ -719,6 +725,8 @@ export function LiveTvScreen() {
         const playbackSession = 'humax-live-' + Date.now();
         playUrl = server.url('/video/:/transcode/universal/start.m3u8', {
           path:liveSessionPath, session:playbackSession,
+          hasMDE:1, mediaBufferSize:102400,
+          'X-Plex-Session-Identifier':playbackSession,
           protocol:'hls', mediaIndex:0, partIndex:0,
           directPlay:0, directStream:0, directStreamAudio:1,
           fastSeek:1, videoQuality:100, videoResolution:'1920x1080',
