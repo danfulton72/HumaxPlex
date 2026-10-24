@@ -466,6 +466,87 @@ export function LiveTvScreen() {
   const details = h('div', 'humax-live-detail', el);
   let entries = [], index = 0, busy = false, alive = true;\n  let providers = [], dayOffset = 0, view = 'now', guideChannel = null, dvrs = [];
   let debugResponses = [], diagnostic = null, debugPage = 0;
+  let channelRows = [], gridIndex = 0, gridSlot = 0, gridBase = 0, guideCache = new Map();
+  const SLOT = 30*60000;
+  const slotsVisible = 5;
+  function toMillis(m) {
+    const raw=m?.Media?.[0]?.beginsAt ?? m?.beginsAt ?? m?.startTime;
+    if (raw == null) return NaN;
+    if (typeof raw === 'number' || /^\\d{10,13}$/.test(String(raw))) {
+      const n=Number(raw); return n < 1e11 ? n*1000 : n;
+    }
+    return new Date(raw).getTime();
+  }
+  function selectedGrid() {
+    const row=channelRows[gridIndex];
+    if (!row) return null;
+    const when=gridBase+gridSlot*SLOT+SLOT/2;
+    const programme=(guideCache.get(row.gridKey)||[]).find(m=>{
+      const start=toMillis(m);
+      const end=Number(m.Media?.[0]?.endsAt || m.endsAt || 0)*1000 ||
+        start+Number(m.duration || 1800000);
+      return Number.isFinite(start) && start<=when && end>when;
+    });
+    return {row,programme};
+  }
+  function renderGrid() {
+    list.innerHTML='';
+    const base=new Date(gridBase);
+    setText(info,'TV Guide · '+base.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+
+      ' · OK: Watch · Play: Watch · Record: Schedule · Right/Left: time · Up/Down: channel');
+    const head=h('div','humax-epg-heading',list);
+    h('div','humax-epg-station',head).textContent='CHANNEL';
+    for(let n=0;n<slotsVisible;n++){
+      h('div','humax-epg-hour',head).textContent=new Date(gridBase+(gridSlot+n)*SLOT)
+        .toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    }
+    channelRows.forEach((row,ri)=>{
+      const line=h('div','humax-epg-line',list);
+      h('div','humax-epg-station',line).textContent=row.channel+
+        (row._capCls ? capBadge(row._capCls) : '');
+      for(let n=0;n<slotsVisible;n++){
+        const minute=gridBase+(gridSlot+n)*SLOT+SLOT/2;
+        const programmes=guideCache.get(row.gridKey)||[];
+        const m=programmes.find(item=>{
+          const start=toMillis(item);
+          const rawEnd=item.Media?.[0]?.endsAt ?? item.endsAt;
+          const end=rawEnd ? (Number(rawEnd)<1e11 ? Number(rawEnd)*1000 : Number(rawEnd)) :
+            start+(Number(item.duration)||1800000);
+          return Number.isFinite(start) && start<=minute && end>minute;
+        });
+        const cell=h('div','humax-epg-cell'+(ri===gridIndex&&n===0?' focus':''),line);
+        cell.textContent=m?.title || (n===0 ? row.title : 'No guide data');
+      }
+    });
+    const sel=selectedGrid();
+    if(sel) setText(details, sel.row.channel+' · '+(sel.programme?.title||sel.row.title)+
+      ' · OK to watch · Record key to schedule programme');
+    const selected=list.children[gridIndex+1];
+    if(selected)selected.scrollIntoView({block:'nearest'});
+  }
+  async function fillGrid() {
+    const rows=channelRows.slice();
+    const date=new Date(gridBase).toISOString().slice(0,10);
+    for (const row of rows) {
+      if (!alive) return;
+      if(!row.gridKey || guideCache.has(row.gridKey)) continue;
+      for (const prefix of providers) {
+        try {
+          const data=await server.get(prefix+'/grid',{channelGridKey:row.gridKey,date});
+          const shows=data.Metadata||data.Airing||data.Media||[];
+          if(shows.length) {guideCache.set(row.gridKey,shows);break;}
+        }catch(e){}
+      }
+      if(view==='grid')renderGrid();
+    }
+  }
+  function activateGrid() {
+    channelRows=entries.slice();
+    gridIndex=0;gridSlot=0;
+    gridBase=Math.floor(Date.now()/SLOT)*SLOT;
+    view='grid';renderGrid();fillGrid();
+  }
+
   const allowed = /^(type|title|grandparentTitle|channelTitle|channelCallSign|channelName|channelIdentifier|channelVcn|channelNumber|gridKey|guideKey|ratingKey|key|id|identifier|source|providerIdentifier|epgSource|beginsAt|endsAt|startTime|duration|onAir|Media|Channel|Metadata|Airing|Directory|Dvr|DVR|MediaProvider|Feature|totalSize|size|status|protocol|decision|mediaType|partIndex|index)$/;
   function safeObject(value, depth = 0) {
     if (depth > 3) return '[nested]';
@@ -524,7 +605,7 @@ export function LiveTvScreen() {
     let rows = [];
     try { rows = await getHdhrLineup(); } catch (e) { return; }
     for (const e of entries) {
-      if (!alive || view !== 'now') break;
+      if (!alive || (view !== 'now' && view !== 'grid')) break;
       const ids = [e.channelVcn, e.channelId, e.gridKey].filter(v => v != null && String(v) !== '').map(String);
       const match = rows.find(r => ids.includes(String(r.GuideNumber)));
       if (!match || !/^https?:\/\//i.test(String(match.URL || ''))) continue;
@@ -533,7 +614,7 @@ export function LiveTvScreen() {
         e._capCls = classify(cap);
       } catch (err) { /* leave unbadged */ }
     }
-    if (alive && view === 'now') render();
+    if (alive && view === 'grid') renderGrid();
   }
   async function load() {
     setText(info, 'Checking Plex DVR and programme guide…');
@@ -618,7 +699,7 @@ export function LiveTvScreen() {
         return;
       }
       setText(info, entries.length + ' programmes on now · OK: guide · Left: diagnostics · Right: recordings');
-      render();
+      activateGrid();
       probeAll(); // best-effort codec badges in the background
     } catch (e) {
       setText(info, 'Live TV unavailable: ' + e.message);
@@ -836,7 +917,7 @@ export function LiveTvScreen() {
     setText(info,'Live TV · '+name+' · '+(cls==='safe'?'H.264':cls==='maybe'?'HEVC':'risky')+' · Back to close');
   }
   async function tuneSelected() {
-    const e = view === 'guide' ? guideChannel : entries[index];
+    const e = view === 'grid' ? channelRows[gridIndex] : view === 'guide' ? guideChannel : entries[index];
     if (!e) return;
     if (tunerDeviceUri()) {
       setText(details,'Reading Dispatcharr HDHomeRun lineup…');
@@ -967,25 +1048,37 @@ export function LiveTvScreen() {
     } catch(err) {setText(details,'Tune OK but playback failed: '+err.message);}
   }
   async function recordSelected() {
-    const e=entries[index];
-    if (!e || !e.item?.guid) {setText(details,'No programme GUID for recording; see diagnostics.'); return;}
+    const selected=view==='grid' ? selectedGrid() : null;
+    const m=selected?.programme || entries[index]?.item;
+    const title=m?.title || selected?.row?.title;
+    if(!m) {setText(details,'No programme selected for recording');return;}
+    const guid=m.guid;
+    const ratingKey=m.ratingKey;
+    if(!guid && !ratingKey) {
+      setText(details,'Plex EPG lacks programme GUID/rating key; cannot create DVR rule.');return;
+    }
+    if(!window.confirm('Schedule Plex recording: '+title+'?')) return;
+    setText(details,'Checking Plex recording template for '+title+'…');
     try {
-      const template=await server.get('/media/subscriptions/template',{guid:e.item.guid});
-      const candidates=template.SubscriptionTemplate || [];
-      if (!candidates.length) {setText(details,'Plex returned no recording template for this programme.'); return;}
-      const t=candidates[0];
-      const target=t.targetLibrarySectionID;
-      const type=t.type;
-      if (!target || type == null) {
-        setText(details,'Recording template missing destination or type: '+JSON.stringify(safeObject(t)).slice(0,300));return;
-      }
-      if (!window.confirm('Schedule Plex DVR recording for '+e.title+'?')) return;
-      const params={targetLibrarySectionID:target,type,
-        'hints[ratingKey]':e.item.ratingKey,'hints[title]':e.title};
-      if (t.params?.mediaProviderID) params['params[mediaProviderID]']=t.params.mediaProviderID;
+      const template=await server.get('/media/subscriptions/template',
+        guid ? {guid} : {ratingKey});
+      const t=(template.SubscriptionTemplate || template.MediaSubscription || [])[0];
+      if(!t) throw new Error('No DVR recording template returned');
+      const target=t.targetLibrarySectionID || t.targetSectionID;
+      if(!target || t.type==null) throw new Error('Recording destination/type missing');
+      const params={
+        targetLibrarySectionID:target,
+        type:t.type,
+        hints:JSON.stringify({ratingKey:String(ratingKey||''),guid:String(guid||'')})
+      };
+      if(t.targetSectionLocationID)params.targetSectionLocationID=t.targetSectionLocationID;
+      if(t.params?.mediaProviderID)params['params[mediaProviderID]']=t.params.mediaProviderID;
       const result=await dvrPost('/media/subscriptions',params);
-      setText(details,'Recording scheduled: '+e.title);
-    } catch(e) {setText(details,'Recording failed: '+e.message);}
+      const subs=result.MediaSubscription || [];
+      setText(details,'Plex recording rule created for '+title+
+        (subs[0]?.key ? ' · rule '+subs[0].key : '')+
+        ' · verify under DVR Schedule');
+    }catch(err){setText(details,'Recording not scheduled: '+err.message);}
   }
   function showProgramActions() {
     const e=entries[index];
@@ -997,6 +1090,18 @@ export function LiveTvScreen() {
   return {
     el, name:'livetv', onShow(){ ambience.restore(); },
     onKey(action) {
+      if (view === 'grid') {
+        if(action==='up'){gridIndex=Math.max(0,gridIndex-1);renderGrid();return true;}
+        if(action==='down'){gridIndex=Math.min(channelRows.length-1,gridIndex+1);renderGrid();return true;}
+        if(action==='left'){gridSlot=Math.max(0,gridSlot-1);renderGrid();return true;}
+        if(action==='right'){gridSlot=Math.min(336,gridSlot+1);renderGrid();return true;}
+        if(action==='enter'||action==='play'||action==='playpause'){tuneSelected();return true;}
+        if(action==='record'||action==='red'){recordSelected();return true;}
+        if(action==='pageup'){gridSlot=Math.max(0,gridSlot-5);renderGrid();return true;}
+        if(action==='pagedown'){gridSlot=Math.min(336,gridSlot+5);renderGrid();return true;}
+        if(action==='back')return false;
+        return true;
+      }
       if (view === 'tune-debug') {
         if (action === 'down' || action === 'pagedown') {
           debugPage=Math.min(3,debugPage+1);
@@ -1025,7 +1130,7 @@ export function LiveTvScreen() {
       if (action === 'play' || action === 'playpause') { tuneSelected(); return true; }
       if (view === 'playing' && action === 'back') {
         if (typeof HumaxVideo !== 'undefined') HumaxVideo.close();
-        view='now'; load(); return true;
+        view='grid'; renderGrid(); return true;
       }
       if (action === 'enter') { if (view === 'now') openProgram(); else if (view === 'guide') showProgramActions(); return true; }\n      if (action === 'right' && view === 'now') { showScheduled(); return true; }\n      if (action === 'left' && view === 'schedule') { view = 'now'; load(); return true; }\n      if (action === 'left' && view === 'guide') { openGuide(dayOffset-1); return true; }\n      if (action === 'right' && view === 'guide') { openGuide(dayOffset+1); return true; }\n      if (action === 'back' && view !== 'now') { view = 'now'; load(); return true; }
       return false;
@@ -1066,5 +1171,17 @@ css.write_text(css.read_text(encoding="utf-8") + """
 .humax-debug-title { font:700 29px var(--body); margin-bottom:28px; color:#f8bf4e; }
 .humax-debug-content { white-space:pre-wrap; overflow-wrap:anywhere; font:25px/1.34 monospace; }
 """, encoding="utf-8")
+
+css.write_text(css.read_text(encoding="utf-8") + """
+.humax-epg-heading,.humax-epg-line {display:grid;grid-template-columns:250px repeat(5,minmax(170px,1fr));gap:5px;margin-bottom:5px;}
+.humax-epg-heading {position:sticky;top:0;z-index:3;background:#111b2d;}
+.humax-epg-station,.humax-epg-hour,.humax-epg-cell {padding:15px 12px;border-radius:8px;min-height:56px;overflow:hidden;}
+.humax-epg-station {background:#132d4c;font-weight:700;color:#fff;}
+.humax-epg-hour {background:#142943;color:#ffcc71;font-weight:700;text-align:center;}
+.humax-epg-cell {background:#155785;color:#f7f8fa;font-size:18px;line-height:1.3;}
+.humax-epg-line:nth-child(even) .humax-epg-cell {background:#194773;}
+.humax-epg-line .humax-epg-cell.focus,.humax-epg-line:has(.focus) .humax-epg-station {background:#d45d9e;color:#fff;}
+.humax-live-list {overflow-y:auto;max-height:68vh;}
+""",encoding="utf-8")
 
 print("Prepared HumaxPlex app assets at", dest)
