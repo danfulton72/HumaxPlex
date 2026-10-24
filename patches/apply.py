@@ -732,6 +732,21 @@ export function LiveTvScreen() {
           key.split('?')[0].slice(0,110));
         return;
       }
+      if (key.startsWith('/livetv/sessions/')) {
+        const decisionUrl = playUrl.replace('/start.m3u8','/decision');
+        try {
+          const response = await fetch(decisionUrl, {headers:{Accept:'application/json'}});
+          if (!response.ok) {
+            const body = await response.text();
+            setText(details,'Plex HLS decision HTTP '+response.status+
+              ' · '+body.replace(/<[^>]*>/g,' ').slice(0,200));
+            return;
+          }
+        } catch(err) {
+          setText(details,'Plex HLS decision request failed: '+err.message);
+          return;
+        }
+      }
       HumaxVideo.open(playUrl);
       view='playing';
       setText(info,'Live TV · HLS startup · Back to close');
