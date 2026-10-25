@@ -777,10 +777,12 @@ export function LiveTvScreen() {
     try {
       const mc = await server.get('/media/subscriptions/scheduled');
       if (view !== 'schedule') return;
-      // Plex returns MediaContainer.MediaGrabOperation[] — one op per recording.
-      // Pending ones carry a nested .Metadata (title/type/channelTitle); already
-      // recorded ones carry .Video and status "complete". Show the pending list.
-      const ops = (mc.MediaGrabOperation || []).filter(o => o && o.status === 'scheduled');
+      // Plex returns MediaContainer.MediaGrabOperation[] — one op per recording,
+      // with a status lifecycle: "scheduled" (upcoming), "inprogress" (recording now),
+      // "complete" (finished). Show the active ones (upcoming + recording); hide the
+      // finished ones here (they live in the recorded library). Each active op carries
+      // a nested .Metadata with title/type/channelTitle.
+      const ops = (mc.MediaGrabOperation || []).filter(o => o && (o.status === 'scheduled' || o.status === 'inprogress'));
       entries = ops.map(o => {
         const md = o.Metadata || {};
         const media = (md.Media || [])[0] || {};
@@ -788,7 +790,7 @@ export function LiveTvScreen() {
         const rawChannel = media.channelTitle || md.channelTitle || '';
         return {
           channel: rawChannel ? channelLabel(rawChannel) : '',
-          title: mainTitle(md) || 'Recording',
+          title: (o.status === 'inprogress' ? '● REC  ' : '') + (mainTitle(md) || 'Recording'),
           episode: subTitle(md),
           summary: md.summary || '',
           start, end, md, item: o,
