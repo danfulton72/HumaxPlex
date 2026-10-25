@@ -129,9 +129,19 @@ from your Plex Live TV tuner when Dispatcharr is set up as one; enter the
 username and password with the TV keyboard and choose **Test and save**. A
 **VOD** item then appears on the home bar.
 
+Only the Plex Home admin profile can change these settings. Under **Settings →
+Dispatcharr VOD → Categories for each profile** the admin can limit which film
+categories each Plex Home profile (for example a child's) sees. A limited
+profile only sees the ticked categories; categories your provider adds later
+stay hidden until ticked, and a profile with none ticked has no VOD item at
+all. Give the admin profile a PIN in Plex so the children can't switch to it.
+The limits are kept on the box, and only control what EasyPlex shows: for a
+second layer, give the children their own Dispatcharr user with **Hide mature
+content** on.
+
 Films play straight from Dispatcharr in the native player, with the same
 seeking, HUD and failure screen as Plex films. Where you stopped is remembered
-on the box (Continue watching), not in Plex. The Xtream password is stored on
+on the box for each Plex profile (Continue watching), not in Plex. The Xtream password is stored on
 the box in the app's own storage, as the Plex sign-in is.
 
 ## Licence

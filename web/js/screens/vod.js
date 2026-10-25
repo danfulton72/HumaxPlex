@@ -14,9 +14,11 @@ import {
 } from '../xtream/api.js';
 import { VodDetailScreen, vodMetaLine, playVod } from './voddetail.js';
 import { VodSetupScreen } from './vodsetup.js';
+import { session, isAdmin, profileKey } from '../session.js';
+import { allowedForUser, filterCategories } from '../xtream/limits.js';
 
 const RESUME_ID = '__resume';
-const LAST_KEY = 'xtreamCategory';
+const LAST_KEY = 'xtreamCategory';   // + ':' + profile
 const RAIL_ROW = 64;
 const RAIL_VISIBLE = 13;
 const SORTS = [
@@ -50,6 +52,11 @@ export function VodScreen() {
 
   const cfg = loadConfig();
   const client = cfg ? new XtreamClient(cfg) : null;
+  // Categories the Plex admin allowed for this profile (null = all).
+  const allow = isAdmin() ? null : allowedForUser(session.user);
+  const allowSet = allow ? new Set(allow) : null;
+  // This profile's Continue watching, minus anything no longer allowed.
+  const myResume = () => resumeItems().filter(r => !allowSet || allowSet.has(String(r.categoryId)));
   let categories = [];          // [{ id, name }]
   let catIndex = 0;
   let shownId = null;           // category whose films are in the grid
@@ -85,7 +92,7 @@ export function VodScreen() {
   }
 
   function railEntries() {
-    const resume = resumeItems();
+    const resume = myResume();
     return (resume.length ? [{ id: RESUME_ID, name: 'Continue watching', count: resume.length }] : []).concat(categories);
   }
 
@@ -134,8 +141,8 @@ export function VodScreen() {
 
   async function showCategory(id) {
     const gen = ++generation;
-    if (id === RESUME_ID) { setItems(resumeItems(), id); return; }
-    store.set(LAST_KEY, id);
+    if (id === RESUME_ID) { setItems(myResume(), id); return; }
+    store.set(LAST_KEY + ':' + profileKey(), id);
     if (cache.has(id)) { setItems(cache.get(id), id); return; }
     items = [];
     grid.setTotal(0);
@@ -156,14 +163,19 @@ export function VodScreen() {
     if (!client) { setText(message, 'Set up Dispatcharr VOD in Settings first.'); return; }
     setText(message, 'Connecting to ' + cfg.server + '…');
     try {
-      categories = await client.categories();
+      categories = filterCategories(await client.categories(), allow);
+      if (!categories.length && allow) {
+        setText(message, 'No film categories have been allowed for ' + ((session.user && session.user.title) || 'this profile') + '. The Plex admin can choose them in Settings → Dispatcharr VOD.');
+        paintRail();
+        return;
+      }
       if (!categories.length) {
         setText(message, 'No film categories. Check that this Dispatcharr user can see VOD and that a VOD-enabled M3U account is set up.');
         paintRail();
         return;
       }
       const entries = railEntries();
-      const last = store.get(LAST_KEY, null);
+      const last = store.get(LAST_KEY + ':' + profileKey(), null);
       const at = entries.findIndex(c => c.id === last);
       catIndex = entries[0].id === RESUME_ID ? 0 : Math.max(0, at);
       paintRail();
@@ -218,7 +230,7 @@ export function VodScreen() {
         resume && { label: 'Remove from Continue Watching', run: () => { clearResume(cur.id); afterResumeChange(); } },
         ...SORTS.map((s, i) => ({ label: 'Sort by ' + s.label, checked: i === sortIndex, run: () => setSort(i) })),
         { label: 'Reload categories', run: () => { cache.clear(); loadCategories(); } },
-        { label: 'Dispatcharr VOD settings…', run: () => router.push(VodSetupScreen()) },
+        isAdmin() && { label: 'Dispatcharr VOD settings…', run: () => router.push(VodSetupScreen()) },
       ],
     });
   }
@@ -234,7 +246,7 @@ export function VodScreen() {
   function afterResumeChange() {
     const entries = railEntries();
     if (shownId === RESUME_ID) {
-      if (entries[0] && entries[0].id === RESUME_ID) setItems(resumeItems(), RESUME_ID);
+      if (entries[0] && entries[0].id === RESUME_ID) setItems(myResume(), RESUME_ID);
       else { zone = 'rail'; catIndex = 0; if (entries[0]) showCategory(entries[0].id); }
     } else {
       const i = entries.findIndex(c => c.id === shownId);
@@ -257,7 +269,7 @@ export function VodScreen() {
     },
     onKey(action) {
       if (!client) {
-        if (action === 'enter' || action === 'menu') { router.push(VodSetupScreen()); return true; }
+        if ((action === 'enter' || action === 'menu') && isAdmin()) { router.push(VodSetupScreen()); return true; }
         return false;
       }
       if (action === 'menu') { openMenu(); return true; }

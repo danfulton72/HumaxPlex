@@ -13,6 +13,15 @@ import { openItem, playItem, openLibrary, openSearch, openSettings, itemOptions 
 import { LiveTvScreen } from './livetv.js';
 import { VodScreen } from './vod.js';
 import { isConfigured as vodConfigured } from '../xtream/api.js';
+import { allowedForUser } from '../xtream/limits.js';
+import { isAdmin } from '../session.js';
+
+// VOD shows once set up, unless the admin allowed this profile no categories.
+function vodVisible() {
+  if (!vodConfigured()) return false;
+  const allow = isAdmin() ? null : allowedForUser(session.user);
+  return !allow || allow.length > 0;
+}
 import { error, log } from '../util/log.js';
 
 const ROWS_TOP = 600;
@@ -88,7 +97,7 @@ export function HomeScreen() {
   let navHasVod = false;
   function buildNav(sections) {
     navSections = sections;
-    navHasVod = vodConfigured();
+    navHasVod = vodVisible();
     const was = navItems && navItems[navIndex];
     navTrack.innerHTML = '';
     navItems = [{ label: 'Home', id: 'home' }]
@@ -248,7 +257,7 @@ export function HomeScreen() {
     name: 'home',
     onShow() {
       ambience.restore();
-      if (navHasVod !== vodConfigured()) buildNav(navSections); // VOD set up or removed in Settings
+      if (navHasVod !== vodVisible()) buildNav(navSections); // VOD set up or removed in Settings
       renderNav(); // widths can't be measured while the screen was hidden
       // Coming back from playback: progress and Continue Watching changed.
       if (Date.now() - loadedAt > 5000) load();

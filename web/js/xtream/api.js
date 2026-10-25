@@ -1,9 +1,10 @@
 // Films from an Xtream Codes compatible server (Dispatcharr's Xtream output):
 // settings, the player_api.php client, stream URLs and local resume points.
 import * as store from '../util/store.js';
+import { profileKey } from '../session.js';
 
 const CONFIG_KEY = 'xtream';
-const RESUME_KEY = 'xtreamResume';
+const RESUME_KEY = 'xtreamResume';   // + ':' + Plex profile: each profile has its own
 const RESUME_MAX = 40;
 const TIMEOUT_MS = 20000;
 
@@ -185,10 +186,13 @@ export function movieInfo(r, id) {
 }
 
 // ---- resume points --------------------------------------------------------
-// Kept on the box: { id, title, year, posterUrl, ext, position, duration, at }.
+// Kept on the box per Plex profile:
+// { id, title, year, posterUrl, ext, categoryId, position, duration, at }.
+
+function resumeKey() { return RESUME_KEY + ':' + profileKey(); }
 
 export function resumeList() {
-  const list = store.get(RESUME_KEY, []);
+  const list = store.get(resumeKey(), []);
   return Array.isArray(list) ? list : [];
 }
 
@@ -204,21 +208,22 @@ export function saveResume(movie, position, duration) {
   if (position > 60000 && !finished) {
     list.unshift({
       id, title: movie.title, year: movie.year || '', posterUrl: movie.posterUrl || '', ext: movie.ext || 'mp4',
+      categoryId: movie.categoryId || '',
       position: Math.floor(position), duration: Math.floor(duration || 0), at: Date.now(),
     });
   }
   list = list.slice(0, RESUME_MAX);
-  store.set(RESUME_KEY, list);
+  store.set(resumeKey(), list);
 }
 
 export function clearResume(id) {
-  store.set(RESUME_KEY, resumeList().filter(r => r.id !== String(id)));
+  store.set(resumeKey(), resumeList().filter(r => r.id !== String(id)));
 }
 
 // Resume entries as tile items (the progress bar reads viewOffset/duration).
 export function resumeItems() {
   return resumeList().map(r => ({
     type: 'xtream-movie', id: r.id, title: r.title, year: r.year, posterUrl: r.posterUrl, ext: r.ext,
-    viewOffset: r.position, duration: r.duration,
+    categoryId: r.categoryId || '', viewOffset: r.position, duration: r.duration,
   }));
 }

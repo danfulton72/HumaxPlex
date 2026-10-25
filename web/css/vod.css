@@ -53,3 +53,18 @@ html.fast .vod-rail-track { transition: none; }
 .vod-button { justify-content: center; }
 .vod-setup-status { position: absolute; left: 160px; top: 880px; width: 1300px; font: 500 26px/1.4 var(--body); color: var(--coral); }
 .vod-setup-status.ok { color: #7CD992; }
+
+/* Setup has up to six rows. */
+.vod-setup .setting { height: 84px; margin-bottom: 12px; }
+
+/* Categories by profile: a scrolling list of rows. */
+.vod-plist { position: absolute; left: 160px; width: 1100px; overflow: hidden; }
+.vod-plist-track { will-change: transform; transition: transform 200ms var(--ease); }
+html.fast .vod-plist-track { transition: none; }
+.vod-prow { height: 72px; margin-bottom: 12px; }
+.vod-prow .setting-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 24px; }
+.vod-prow .setting-value { flex: 0 0 auto; }
+.vod-prow.dim .setting-label { color: var(--dim); }
+.vod-prow.dim.focus .setting-label { color: rgba(11, 13, 18, 0.65); }
+.vod-plist-status { position: absolute; left: 160px; top: 990px; width: 1500px; font: 500 24px/1.4 var(--body); color: var(--coral); }
+.vod-profiles .settings-foot { bottom: 30px; }

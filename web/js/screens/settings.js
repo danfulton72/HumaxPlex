@@ -2,15 +2,15 @@
 import { DEV, VERSION } from '../config.js';
 import { deviceInfo } from '../platform/device.js';
 import { h, toggleClass } from '../util/dom.js';
-import { session, signOut, useServer, activateHomeUser } from '../session.js';
+import { session, signOut, useServer, activateHomeUser, isAdmin, ensureUserRole } from '../session.js';
 import { getServers, connect } from '../plex/auth.js';
-import { identity } from '../plex/client.js';
+import { homeRequest, homeUsers, userLabel } from '../plex/home.js';
 import * as router from '../router.js';
 import { ServerPicker } from './login.js';
 import { error } from '../util/log.js';
 import { useAmbience } from '../ui/backdrop.js';
 import * as store from '../util/store.js';
-import { showOptions } from '../ui/options.js';
+import { showOptions, toast } from '../ui/options.js';
 import { VodSetupScreen } from './vodsetup.js';
 import { loadConfig as vodConfig } from '../xtream/api.js';
 
@@ -27,33 +27,9 @@ export function SettingsScreen() {
   let index = 0;
   let items = [];
   let choosingUser = false;
-  function userLabel(user) { return user.title || user.username || user.name || 'Plex user'; }
-  async function homeRequest(url, { method = 'GET', pin } = {}) {
-    const response = await fetch('https://plex.tv' + url +
-      (pin ? '?pin=' + encodeURIComponent(pin) : ''), {
-        method,
-        headers: Object.assign({ Accept: 'application/json' }, identity(), {
-          'X-Plex-Token': session.rootToken || session.token,
-        }),
-      });
-    if (!response.ok) throw new Error('Plex user switch failed (HTTP ' + response.status + ')');
-    const body = await response.text();
-    if (body.trim().startsWith('<')) {
-      const root = new DOMParser().parseFromString(body, 'application/xml').documentElement;
-      return {
-        users: Array.from(root.querySelectorAll('user')).map(el => ({
-          id: el.getAttribute('id'), title: el.getAttribute('title') || el.getAttribute('username'),
-          protected: el.getAttribute('protected') === '1',
-        })),
-        authenticationToken: root.getAttribute('authenticationToken'),
-      };
-    }
-    return JSON.parse(body);
-  }
   async function switchUser() {
     try {
-      const result = await homeRequest('/api/v2/home/users');
-      const users = Array.isArray(result) ? result : (result.users || result.User || []);
+      const users = await homeUsers();
       if (!users.length) throw new Error('No Plex Home profiles found');
       choosingUser = true;
       list.innerHTML = '';
@@ -99,8 +75,13 @@ export function SettingsScreen() {
       { label: 'Plex user', value: session.user ? session.user.title : '—', run: switchUser, action: 'Switch user' },
       { label: 'Unlink Plex account', value: 'Sign out', run: doSignOut },
       { label: 'Start screen', value: START_LABELS[store.get('startScreen', 'home')] || 'Home', run: chooseStart },
-      { label: 'Dispatcharr VOD', value: vodConfig() ? vodConfig().username + ' @ ' + vodConfig().server.replace(/^https?:\/\//, '') : 'Not set up',
-        run: () => router.push(VodSetupScreen({ onSaved: build })) },
+      isAdmin() ? {
+        label: 'Dispatcharr VOD', value: vodConfig() ? vodConfig().username + ' @ ' + vodConfig().server.replace(/^https?:\/\//, '') : 'Not set up',
+        run: () => router.push(VodSetupScreen({ onSaved: build })),
+      } : {
+        label: 'Dispatcharr VOD', value: 'Managed by the Plex admin',
+        run: () => toast('Switch to the Plex admin profile to change VOD settings'),
+      },
     ];
     items.forEach(it => {
       it.el = h('div', 'setting', list);
@@ -150,6 +131,7 @@ export function SettingsScreen() {
   }
 
   build();
+  ensureUserRole().then(() => { if (!choosingUser) build(); });
 
   return {
     el,

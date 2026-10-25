@@ -125,3 +125,49 @@ test('imageUrl proxies absolute artwork on the box', () => {
   assert.equal(x.imageUrl('http://i/a.jpg'), 'https://appassets.androidplatform.net/pleximg?url=http%3A%2F%2Fi%2Fa.jpg');
   delete globalThis.EasyPlexVideo;
 });
+
+test('category limits per profile: none means all, matched by uuid or name', async () => {
+  const lim = await import('../web/js/xtream/limits.js');
+  localStorage.clear();
+  const cats = [{ id: '1', name: 'Kids' }, { id: '2', name: 'Horror' }, { id: '3', name: 'Family' }];
+  assert.equal(lim.allowedFor('kid'), null);
+  assert.deepEqual(lim.filterCategories(cats, null), cats);
+  lim.setAllowed('kid', 'Ella', ['1', 3, '3']);
+  assert.deepEqual(lim.allowedFor('kid'), ['1', '3']);
+  assert.deepEqual(lim.filterCategories(cats, lim.allowedFor('kid')).map(c => c.name), ['Kids', 'Family']);
+  assert.deepEqual(lim.allowedForUser({ uuid: 'kid', title: 'x' }), ['1', '3']);
+  assert.deepEqual(lim.allowedForUser({ title: 'Ella' }), ['1', '3'], 'older sessions without a uuid match by name');
+  assert.equal(lim.allowedForUser({ uuid: 'other', title: 'Dan' }), null);
+  assert.equal(lim.limitLabel(null, 3), 'All categories');
+  assert.equal(lim.limitLabel([], 3), 'No films');
+  assert.equal(lim.limitLabel(['1', '3'], 40), '2 of 40 categories');
+  lim.setAllowed('kid', 'Ella', []);
+  assert.deepEqual(lim.filterCategories(cats, lim.allowedFor('kid')), [], 'an empty limit hides everything');
+  lim.setAllowed('kid', 'Ella', null);
+  assert.equal(lim.allowedFor('kid'), null);
+});
+
+test('resume points are kept per Plex profile', async () => {
+  const { session } = await import('../web/js/session.js');
+  localStorage.clear();
+  session.user = { title: 'Dan', uuid: 'admin' };
+  x.saveResume({ id: '11', title: 'Heat', categoryId: '2' }, 1200000, 6000000);
+  assert.equal(x.resumeFor('11').categoryId, '2');
+  session.user = { title: 'Ella', uuid: 'kid' };
+  assert.equal(x.resumeFor('11'), null);
+  assert.deepEqual(x.resumeItems(), []);
+  session.user = null;
+});
+
+test('the account that linked the box is admin unless a Home says otherwise', async () => {
+  const s = await import('../web/js/session.js');
+  s.signIn('t', { title: 'Dan', uuid: 'a', home: true, homeAdmin: true });
+  assert.ok(s.isAdmin());
+  s.signIn('t', { title: 'Solo', uuid: 'b', home: false });
+  assert.ok(s.isAdmin());
+  s.activateHomeUser('k', { title: 'Ella', uuid: 'kid', admin: false });
+  assert.ok(!s.isAdmin());
+  assert.equal(s.profileKey(), 'kid');
+  s.signOut();
+  assert.ok(!s.isAdmin());
+});

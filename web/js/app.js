@@ -2,7 +2,7 @@
 import { DEV, DEV_PLEX_URL, VERSION } from './config.js';
 import * as router from './router.js';
 import { inject } from './input.js';
-import { session, reconnect, signOut } from './session.js';
+import { session, reconnect, signOut, ensureUserRole } from './session.js';
 import { HomeScreen } from './screens/home.js';
 import { LiveTvScreen } from './screens/livetv.js';
 import { LoginScreen } from './screens/login.js';
@@ -13,6 +13,7 @@ import * as store from './util/store.js';
 
 // Home is always at the bottom of the stack so Back from Live TV returns to it.
 function goHome() {
+  ensureUserRole();   // older sessions: learn whether this profile is the Plex admin
   router.reset(HomeScreen());
   const start = store.get('startScreen', 'home');
   if (start === 'guide' || start === 'channel') router.push(LiveTvScreen({ autoplay: start === 'channel' }));

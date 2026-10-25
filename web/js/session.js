@@ -2,7 +2,7 @@
 // goes straight to the home screen.
 import * as store from './util/store.js';
 import { Server } from './plex/server.js';
-import { getServers, connect } from './plex/auth.js';
+import { getServers, connect, getUser } from './plex/auth.js';
 import { log } from './util/log.js';
 
 export const session = {
@@ -19,14 +19,43 @@ export function signIn(token, user) {
   session.token = token;
   session.rootToken = token;
   store.set('rootToken', token);
-  session.user = { title: user.title || user.username, thumb: user.thumb, uuid: user.uuid };
+  // The account that linked the box: the Plex Home admin, or the owner when
+  // there is no Home.
+  session.user = { title: user.title || user.username, thumb: user.thumb, uuid: user.uuid, admin: isAccountAdmin(user) };
   store.set('token', token);
   store.set('user', session.user);
 }
 
+function isAccountAdmin(user) {
+  return !user.home || !!user.homeAdmin;
+}
+
+// True when the current profile is the Plex Home admin.
+export function isAdmin() {
+  return !!(session.user && session.user.admin === true);
+}
+
+// Sessions saved before roles were recorded: ask plex.tv once.
+export async function ensureUserRole() {
+  const u = session.user;
+  if (!u || typeof u.admin === 'boolean' || !session.token) return;
+  try {
+    const me = await getUser(session.token);
+    u.admin = isAccountAdmin(me);
+    if (!u.uuid && me.uuid) u.uuid = me.uuid;
+    store.set('user', u);
+  } catch (e) { /* offline: treated as not admin until it can be checked */ }
+}
+
+// Stable key for per-profile settings on this box.
+export function profileKey() {
+  const u = session.user;
+  return (u && (u.uuid || u.title)) || 'default';
+}
+
 export function activateHomeUser(token, user) {
   session.token = token;
-  session.user = { title: user.title || user.username, thumb: user.thumb, uuid: user.uuid };
+  session.user = { title: user.title || user.username, thumb: user.thumb, uuid: user.uuid, admin: !!user.admin };
   session.server = null;
   store.set('token', token);
   store.set('user', session.user);
