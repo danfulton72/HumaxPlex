@@ -52,5 +52,26 @@ export function supports4K() {
   return false;
 }
 
+// Can this box decode the given MIME type (e.g. 'video/av01')? Asks the native
+// shell, which checks MediaCodecList. Cached per type. In a desktop browser we
+// can't know, so report true and let the HTML5 <video> fallback handle it.
+const decodeCache = {};
+export function canDecode(mime) {
+  if (mime in decodeCache) return decodeCache[mime];
+  let result = true; // browser default: we can't query, so assume yes and let <video> handle it
+  try {
+    const n = native();
+    if (n && typeof n.canDecode === 'function') {
+      const r = n.canDecode(mime);
+      // Native answers "1" (yes), "0" (no), or "" (query failed). On failure we
+      // err toward transcoding only for codecs we specifically gate, so treat
+      // "" as "unknown -> don't direct-play the exotic codec".
+      result = r === '1';
+    }
+  } catch (e) { result = true; }
+  decodeCache[mime] = result;
+  return result;
+}
+
 // The native shell keeps the screen awake while video plays.
 export function setScreenSaver() {}

@@ -5,7 +5,7 @@
 import { DEV } from '../config.js';
 import { h, setText, setTransform, toggleClass } from '../util/dom.js';
 import { createPlayer } from '../platform/player.js';
-import { setScreenSaver, supports4K } from '../platform/device.js';
+import { setScreenSaver, supports4K, canDecode } from '../platform/device.js';
 import { session } from '../session.js';
 import { clock, episodeLabel, uuid } from '../util/format.js';
 import * as icons from '../ui/icons.js';
@@ -15,13 +15,12 @@ import { request } from '../plex/client.js';
 import { parseSubtitles, CueTrack } from '../player/subtitles.js';
 
 // What Android TV boxes reliably decode natively with Media3. No DTS.
-// av1 + opus are the newer YouTube-era codecs; recent boxes (Android 9+/Media3)
-// decode them in hardware. Direct-playing them avoids the Plex HLS transcode,
-// which also fixes position drift on those streams. If a box can't decode one,
-// playback falls back to HLS automatically (see the direct-play failure path).
+// av1 is NOT listed here: it's only direct-played when the box reports a decoder
+// for it (see decideMode / canDecode). opus is safe to list — Android has had a
+// built-in Opus decoder since 5.0.
 const DIRECT = {
   container: { mp4: 1, m4v: 1, mkv: 1 },
-  video: { h264: 1, hevc: 1, av1: 1 },
+  video: { h264: 1, hevc: 1 },
   audio: { aac: 1, ac3: 1, eac3: 1, mp3: 1, opus: 1 },
 };
 const TEXT_SUBS = { srt: 1, subrip: 1, ass: 1, ssa: 1, mov_text: 1, vtt: 1, webvtt: 1, smi: 1 };
@@ -236,7 +235,12 @@ export function PlayerScreen(initial, { offset = null } = {}) {
   // --- Opening ----------------------------------------------------------
 
   function decideMode() {
-    const directOk = DIRECT.container[media.container] && DIRECT.video[media.videoCodec] &&
+    // Base codecs are always direct-playable; AV1 only if this box has a decoder
+    // for it (asked once, cached). This avoids the black-screen-with-audio trap
+    // on boxes that can't decode AV1 but don't report an error.
+    const videoOk = DIRECT.video[media.videoCodec] ||
+      (media.videoCodec === 'av1' && canDecode('video/av01'));
+    const directOk = DIRECT.container[media.container] && videoOk &&
       (!audioStream || DIRECT.audio[audioStream.codec]);
     const subsOk = !subStream || isEmbeddedText(subStream) || isSidecarText(subStream);
     return directOk && subsOk ? 'direct' : 'hls';

@@ -445,6 +445,25 @@ public final class MainActivity extends Activity {
             } catch (org.json.JSONException ignored) { /* return what we have */ }
             return out.toString();
         }
+        // Does this box have a decoder for the given MIME type (e.g. "video/av01")?
+        // Used to decide whether an exotic codec can be direct-played instead of
+        // transcoded. Returns "1"/"0"; empty string if the query itself failed.
+        @JavascriptInterface public String canDecode(String mimeType) {
+            try {
+                android.media.MediaCodecList list = new android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS);
+                for (android.media.MediaCodecInfo info : list.getCodecInfos()) {
+                    if (!info.isEncoder()) {
+                        String[] types = info.getSupportedTypes();
+                        for (int i = 0; i < types.length; i++) {
+                            if (types[i] != null && types[i].equalsIgnoreCase(mimeType)) return "1";
+                        }
+                    }
+                }
+                return "0";
+            } catch (Exception e) {
+                return "";
+            }
+        }
         // Film/show HUD text from the web player. progress is 0-1000 or -1;
         // show brings the HUD up; sticky keeps it up (paused, seeking).
         @JavascriptInterface public void setHud(String title, String line, int progress, boolean show, boolean sticky) {
