@@ -496,14 +496,16 @@ export function LiveTvScreen() {
         programmeAtCursor: sel.programme ? safeObject(sel.programme) : 'none',
         totalCachedDays: guideCache.size,
       } : 'n/a'],
-      ['Recording template', lastTemplate ? safeObject(lastTemplate) : 'none yet — press Record on a programme'],
+      ['Last recording request', recordAttemptText()],
+      ['Recording template', templateText(lastTemplate)],
       ['Plex DVRs', dvrs.map(d => safeObject(d))],
       ['EPG providers', providers],
       ...debugResponses.map((r, i) => ['Endpoint ' + (i + 1) + ' ' + r.name, r.data]),
     ];
     debugPage = Math.max(0, Math.min(debugPage, cards.length - 1));
     pre.textContent = 'PAGE ' + (debugPage + 1) + ' / ' + cards.length + '\n' + cards[debugPage][0] + '\n\n' +
-      JSON.stringify(cards[debugPage][1], null, 2).slice(0, 3200);
+      (typeof cards[debugPage][1] === 'string' ? cards[debugPage][1] :
+        JSON.stringify(cards[debugPage][1], null, 2)).slice(0, 4000);
   }
   let tuneReport = [];
   function showTuneReport(lines, title) {
@@ -696,14 +698,20 @@ export function LiveTvScreen() {
       if (!entries.length) setText(details, 'No scheduled recordings.');
     } catch (e) { setText(details, 'Unable to load recordings: ' + e.message); }
   }
-  async function dvrPost(path, params = {}) {
-    const url = server.url(path, params);
+  async function dvrPost(path, params = {}, rawQuery = '') {
+    const url = server.url(path, params) + (rawQuery ? '&' + rawQuery : '');
     const response = await fetch(url, {
       method: 'POST',
       headers: Object.assign({ Accept: 'application/json', 'X-Plex-Token': server.token }, identity()),
     });
     const body = await response.text();
-    if (!response.ok) throw new Error('Plex HTTP ' + response.status + ' ' + body.slice(0, 140));
+    if (!response.ok) {
+      const title = /<title>([^<]*)<\/title>/i.exec(body);
+      const text = (title ? title[1] : body.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+      const err = new Error('Plex HTTP ' + response.status + (text ? ' ' + text.slice(0, 140) : ''));
+      err.status = response.status;
+      throw err;
+    }
     let data;
     try { data = JSON.parse(body); }
     catch (e) { throw new Error('Plex returned non-JSON response'); }
@@ -719,7 +727,13 @@ export function LiveTvScreen() {
   const REC_PREF = 'easyplexRecordLibrary:';
   function prefGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function prefSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
-  function libraryKind(opt) { return Number(opt?.type) === 1 ? 'movie' : 'show'; }
+  // Which kind of library the option records into: Plex says so in the option's
+  // parameters (params[libraryType] 1 = movies, 2 = TV); else go by its type.
+  function libraryKind(opt) {
+    const m = /(?:^|&)params(?:%5B|\[)libraryType(?:%5D|\])=(\d+)/i.exec(String(opt?.parameters || ''));
+    if (m) return m[1] === '1' ? 'movie' : 'show';
+    return Number(opt?.type) === 1 ? 'movie' : 'show';
+  }
   function librariesFor(opt, sections) {
     const kind = libraryKind(opt);
     const out = [];
@@ -833,47 +847,108 @@ export function LiveTvScreen() {
     dlg.status = '';
     renderDialog();
   }
-  // Query for POST /media/subscriptions: the option's own parameter string,
-  // plus the chosen library/folder and the option's default preferences.
-  function subscriptionParams(opt, lib, m) {
-    const params = {};
-    if (opt.parameters) new URLSearchParams(String(opt.parameters)).forEach((v, k) => { params[k] = v; });
+  // Query for POST /media/subscriptions, built the way Plex Web builds it: every
+  // preference from the option's Setting list (blank ones too), the library and
+  // folder, includeGrabs, then the option's own parameter string passed through
+  // untouched, plus the type if that string lacks one.
+  function prefValue(st) {
+    const v = st.value !== undefined && st.value !== null ? st.value : st.default;
+    if (v === undefined || v === null) return '';
+    return typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v);
+  }
+  function subscriptionQuery(opt, lib, m, withLocation) {
+    const parts = [];
+    const add = (k, v) => parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v == null ? '' : String(v)));
+    for (const st of opt.Setting || []) if (st && st.id) add('prefs[' + st.id + ']', prefValue(st));
+    add('targetLibrarySectionID', lib.sectionId);
+    add('targetSectionLocationID', withLocation ? lib.locId : '');
+    add('includeGrabs', 1);
+    let given = String(opt.parameters || '').replace(/^[?&]+/, '');
+    if (given) parts.push(given);
     else {
-      params.type = opt.type;
-      if (m.guid) params['hints[guid]'] = m.guid;
-      if (m.ratingKey) params['hints[ratingKey]'] = m.ratingKey;
-      params['hints[title]'] = titleOf(m);
+      if (m.guid) add('hints[guid]', m.guid);
+      if (m.ratingKey) add('hints[ratingKey]', m.ratingKey);
+      add('hints[title]', titleOf(m));
     }
-    params.targetLibrarySectionID = lib.sectionId;
-    if (lib.locId) params.targetSectionLocationID = lib.locId;
-    for (const st of opt.Setting || []) {
-      const value = st.value ?? st.default;
-      const key = 'prefs[' + st.id + ']';
-      if (st.id && value != null && value !== '' && !(key in params)) params[key] = String(value);
-    }
-    return params;
+    if (!/(?:^|&)type=/.test(given) && opt.type != null) add('type', opt.type);
+    return parts.join('&');
+  }
+  // What the last attempt sent and got back, for the diagnostics page.
+  let lastRecordAttempts = [];
+  function decodeQuery(q) {
+    return q.split('&').filter(Boolean).map(kv => {
+      const i = kv.indexOf('=');
+      const dec = x => { try { return decodeURIComponent(x.replace(/\+/g, ' ')); } catch (e) { return x; } };
+      return i < 0 ? dec(kv) : dec(kv.slice(0, i)) + ' = ' + dec(kv.slice(i + 1)).slice(0, 90);
+    });
+  }
+  function recordAttemptText() {
+    if (!lastRecordAttempts.length) return 'none yet';
+    const out = lastRecordAttempts.map((a, i) => 'Attempt ' + (i + 1) + ': ' + a.result);
+    out.push('', 'Sent (attempt ' + lastRecordAttempts.length + '):');
+    return out.concat(lastRecordAttempts[lastRecordAttempts.length - 1].query).join('\n');
+  }
+  function templateText(t) {
+    const opts = templateSummary(t);
+    if (typeof opts === 'string') return opts;
+    const out = [];
+    opts.forEach((o, i) => {
+      out.push('Option ' + (i + 1) + ': ' + o.title + ' · type ' + o.type + (o.airingsType ? ' · ' + o.airingsType : '') +
+        (o.selected ? ' · selected' : '') + ' · library ' + (o.targetLibrarySectionID ?? '-') + '/' + (o.targetSectionLocationID ?? '-'));
+      o.parameters.forEach(x => out.push('  ' + x));
+      if (o.settings.length) out.push('  prefs: ' + o.settings.join(', '));
+    });
+    return out.join('\n');
+  }
+  function templateSummary(t) {
+    if (!t) return 'none yet — press Record on a programme';
+    const opts = t.SubscriptionTemplate?.[0]?.MediaSubscription || t.MediaSubscription || [];
+    return opts.map(o => ({
+      title: o.title, type: o.type, airingsType: o.airingsType, selected: o.selected,
+      targetLibrarySectionID: o.targetLibrarySectionID, targetSectionLocationID: o.targetSectionLocationID,
+      librarySectionTitle: o.librarySectionTitle, locationPath: o.locationPath,
+      parameters: decodeQuery(String(o.parameters || '')),
+      settings: (o.Setting || []).map(st => st.id + ' = ' + prefValue(st) + (st.type ? ' (' + st.type + ')' : '')),
+    }));
   }
   async function submitRecording() {
     if (!dlg || dlg.busy) return;
     const opt = dlg.opts[dlg.optIdx], lib = dlg.libs[dlg.libIdx], m = dlg.m;
     if (!lib) { dlg.status = 'Choose a library to save into.'; renderDialog(); return; }
     dlg.busy = true; dlg.status = 'Scheduling…'; renderDialog();
-    try {
-      await dvrPost('/media/subscriptions', subscriptionParams(opt, lib, m));
-      prefSet(REC_PREF + libraryKind(opt), lib.sectionId + ':' + lib.locId);
-      if (m.guid) scheduledGuids.add(m.guid);
-      if (Number(opt.type) !== 4 && m.grandparentGuid) scheduledGuids.add(m.grandparentGuid);
-      const what = opt.title || 'Recording';
-      closeDialog();
-      if (view === 'grid') renderGrid();
-      loadScheduled();
-      say(what + ' scheduled: ' + mainTitle(m) + ' → ' + lib.title + ' · Blue shows recordings');
-    } catch (err) {
+    lastRecordAttempts = [];
+    // Plex Web leaves the folder blank and lets Plex pick; try the chosen folder
+    // first, then blank if Plex rejects the request.
+    const tries = lib.locId ? [true, false] : [false];
+    let lastErr = null;
+    for (const withLocation of tries) {
+      const q = subscriptionQuery(opt, lib, m, withLocation);
+      try {
+        await dvrPost('/media/subscriptions', {}, q);
+        lastRecordAttempts.push({ result: 'OK', query: decodeQuery(q) });
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastRecordAttempts.push({ result: err.message, query: decodeQuery(q) });
+        lastErr = err;
+        if (err.status !== 400) break;
+      }
+    }
+    if (lastErr) {
       if (!dlg) return;
       dlg.busy = false;
-      dlg.status = 'Not scheduled: ' + err.message;
+      dlg.status = 'Not scheduled: ' + lastErr.message + ' · Green: details';
       renderDialog();
+      return;
     }
+    prefSet(REC_PREF + libraryKind(opt), lib.sectionId + ':' + lib.locId);
+    if (m.guid) scheduledGuids.add(m.guid);
+    if (Number(opt.type) !== 4 && m.grandparentGuid) scheduledGuids.add(m.grandparentGuid);
+    const what = opt.title || 'Recording';
+    closeDialog();
+    if (view === 'grid') renderGrid();
+    loadScheduled();
+    say(what + ' scheduled: ' + mainTitle(m) + ' → ' + lib.title + ' · Blue shows recordings');
   }
   // Options list (hold OK / Menu): everything the colour and record keys do.
   let menu = null, menuEl = null;
@@ -942,6 +1017,14 @@ export function LiveTvScreen() {
         else closeDialog();
         return true;
       case 'record': case 'red': submitRecording(); return true;
+      case 'green': {                       // show what was sent and what Plex offered
+        const back = dlg.returnTo;
+        closeDialog();
+        view = back;
+        debugPage = 3;
+        showDebug();
+        return true;
+      }
       case 'back': closeDialog(); return true;
       default: return true;
     }
