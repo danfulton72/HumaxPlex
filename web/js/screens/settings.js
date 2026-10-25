@@ -11,6 +11,8 @@ import { error } from '../util/log.js';
 import { useAmbience } from '../ui/backdrop.js';
 import * as store from '../util/store.js';
 import { showOptions } from '../ui/options.js';
+import { VodSetupScreen } from './vodsetup.js';
+import { loadConfig as vodConfig } from '../xtream/api.js';
 
 const START_LABELS = { home: 'Home', guide: 'Live TV guide', channel: 'Live TV: last channel' };
 
@@ -97,6 +99,8 @@ export function SettingsScreen() {
       { label: 'Plex user', value: session.user ? session.user.title : '—', run: switchUser, action: 'Switch user' },
       { label: 'Unlink Plex account', value: 'Sign out', run: doSignOut },
       { label: 'Start screen', value: START_LABELS[store.get('startScreen', 'home')] || 'Home', run: chooseStart },
+      { label: 'Dispatcharr VOD', value: vodConfig() ? vodConfig().username + ' @ ' + vodConfig().server.replace(/^https?:\/\//, '') : 'Not set up',
+        run: () => router.push(VodSetupScreen({ onSaved: build })) },
     ];
     items.forEach(it => {
       it.el = h('div', 'setting', list);
@@ -150,7 +154,7 @@ export function SettingsScreen() {
   return {
     el,
     name: 'settings',
-    onShow() { ambience.restore(); },
+    onShow() { ambience.restore(); if (!choosingUser) build(); },
     onKey(action) {
       if (action === 'up') { index = Math.max(0, index - 1); render(); return true; }
       if (action === 'down') { index = Math.min(items.length - 1, index + 1); render(); return true; }

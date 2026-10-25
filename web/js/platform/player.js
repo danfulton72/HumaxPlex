@@ -17,6 +17,8 @@ function nativeBackend(container, listener) {
     } else if (name === 'time') {
       currentTime = value;
       listener.onTime(value);
+    } else if (name === 'duration') {
+      if (listener.onDuration) listener.onDuration(value);
     }
   };
   return {
@@ -49,6 +51,7 @@ function videoBackend(container, listener) {
   v.addEventListener('waiting', () => listener.onBuffering(true));
   v.addEventListener('playing', () => listener.onBuffering(false));
   v.addEventListener('ended', () => listener.onEnd());
+  v.addEventListener('durationchange', () => { if (listener.onDuration && isFinite(v.duration)) listener.onDuration(v.duration * 1000); });
   v.addEventListener('error', () => listener.onError('video error ' + (v.error && v.error.code)));
   return {
     open(url) { v.src = url; },

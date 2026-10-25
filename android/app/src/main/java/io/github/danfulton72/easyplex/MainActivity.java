@@ -56,6 +56,7 @@ public final class MainActivity extends Activity {
     private int imageFailures = 0;
     private String lastImageIssue = "none";
     private String videoStats = "video idle";
+    private long sentDuration = -1;
     private String playbackError = null;
     private long playbackStartedAt = 0;
     private String playbackKind = "unknown";
@@ -157,6 +158,11 @@ public final class MainActivity extends Activity {
             @Override public void run() {
                 if (nativePlayer != null) {
                     js("time", String.valueOf(nativePlayer.getCurrentPosition()));
+                    long knownDuration = nativePlayer.getDuration();
+                    if (knownDuration > 0 && knownDuration != sentDuration) {
+                        sentDuration = knownDuration;
+                        js("duration", String.valueOf(knownDuration));
+                    }
                     androidx.media3.common.Format fmt = nativePlayer.getVideoFormat();
                     androidx.media3.exoplayer.DecoderCounters counts = nativePlayer.getVideoDecoderCounters();
                     updatePlaybackHud();
@@ -268,6 +274,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void open(String url) {
             runOnUiThread(() -> {
                 closeVideo();
+                sentDuration = -1;
                 playbackError = null;
                 playbackKind = url.contains("/video/:/transcode/") ? "Plex HLS transcode" : (url.contains("/livetv/") ? "Live session" : "Direct media");
                 playbackStartedAt = android.os.SystemClock.uptimeMillis();

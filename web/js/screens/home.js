@@ -11,6 +11,8 @@ import * as router from '../router.js';
 import * as icons from '../ui/icons.js';
 import { openItem, playItem, openLibrary, openSearch, openSettings, itemOptions } from '../nav.js';
 import { LiveTvScreen } from './livetv.js';
+import { VodScreen } from './vod.js';
+import { isConfigured as vodConfigured } from '../xtream/api.js';
 import { error, log } from '../util/log.js';
 
 const ROWS_TOP = 600;
@@ -82,12 +84,21 @@ export function HomeScreen() {
   let artTimer = 0;
   let reportedPaint = false;
 
+  let navSections = [];
+  let navHasVod = false;
   function buildNav(sections) {
+    navSections = sections;
+    navHasVod = vodConfigured();
+    const was = navItems && navItems[navIndex];
     navTrack.innerHTML = '';
     navItems = [{ label: 'Home', id: 'home' }]
       .concat(sections.map(s => ({ label: s.title, id: 'section', section: s })))
-      .concat([{ label: 'Live TV & DVR', id: 'livetv' }, { label: 'Search', id: 'search', icon: icons.search }, { label: 'Settings', id: 'settings', icon: icons.gear }]);
-    navIndex = Math.min(navIndex, navItems.length - 1);
+      .concat([{ label: 'Live TV & DVR', id: 'livetv' }])
+      .concat(navHasVod ? [{ label: 'VOD', id: 'vod' }] : [])
+      .concat([{ label: 'Search', id: 'search', icon: icons.search }, { label: 'Settings', id: 'settings', icon: icons.gear }]);
+    // Keep focus on the same item when entries are added or removed.
+    const same = was ? navItems.findIndex(n => n.id === was.id && (n.id !== 'section' || n.section.key === was.section.key)) : -1;
+    navIndex = same >= 0 ? same : Math.min(navIndex, navItems.length - 1);
     navItems.forEach((n, i) => {
       if (n.icon && !navItems[i - 1].icon) h('i', 'nav-sep', navTrack);
       n.el = h('div', 'nav-item' + (n.icon ? ' nav-icon' : ''), navTrack);
@@ -227,6 +238,7 @@ export function HomeScreen() {
   function activateNav(n) {
     if (n.id === 'section') openLibrary(n.section);
     else if (n.id === 'livetv') router.push(LiveTvScreen());
+    else if (n.id === 'vod') router.push(VodScreen());
     else if (n.id === 'search') openSearch();
     else if (n.id === 'settings') openSettings();
   }
@@ -236,6 +248,7 @@ export function HomeScreen() {
     name: 'home',
     onShow() {
       ambience.restore();
+      if (navHasVod !== vodConfigured()) buildNav(navSections); // VOD set up or removed in Settings
       renderNav(); // widths can't be measured while the screen was hidden
       // Coming back from playback: progress and Continue Watching changed.
       if (Date.now() - loadedAt > 5000) load();

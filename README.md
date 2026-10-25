@@ -1,7 +1,7 @@
 # EasyPlex
 
 A fast, remote-friendly Plex client for Android TV boxes, with a Live TV guide,
-DVR recording and direct Dispatcharr playback.
+DVR recording, direct Dispatcharr playback and Dispatcharr films (VOD).
 
 Tested on the Humax FVP-4KGTR (Android 9). Intended to work on other Android TV
 and Google TV devices such as the Dangbei DBOX02 (Android 11). Not affiliated
@@ -14,6 +14,8 @@ with Plex, Humax, Dangbei or Google.
 | `web/` | The user interface (HTML, CSS and JavaScript), packaged into the APK as-is |
 | `web/js/screens/livetv.js` + `livetv/` | Live TV: a small coordinator plus modules for channels, guide, day guide, recordings, recording, playback and diagnostics; pure helpers in `livetv/helpers.js` |
 | `web/css/livetv.css` | Live TV, options lists and dialogs |
+| `web/js/xtream/api.js` | Xtream Codes client for Dispatcharr VOD: settings, `player_api.php`, stream URLs, resume points |
+| `web/js/screens/vod*.js`, `web/css/vod.css` | VOD: setup, category browser, film details and player |
 | `tests/` | Lint, unit, Live TV and browser tests (see BUILDING.md) |
 | `android/` | The Android shell: WebView, Media3 video player and remote-key handling |
 | `scripts/make_tv_banner.py` | Generates the Android TV launcher banner from the app icon |
@@ -111,9 +113,26 @@ Remotes without colour, record or number keys (such as Google TV remotes) can
 | Watching | Hold OK | Record what's on, add/remove favourite |
 | Watching | Right | Audio and subtitle tracks |
 | Watching | Back | Return to guide |
+| VOD | Up / Down, Right | Choose a category, move into its films |
+| VOD | OK · Play | Film details · play (resumes where you left off) |
+| VOD | Yellow · hold OK | Sort · options (resume, play from start, sort, reload, settings) |
 
 Live TV opens on the channel you last watched. **Settings → Start screen**
 can open EasyPlex straight into the Live TV guide or the last channel.
+
+## Dispatcharr VOD (films)
+
+EasyPlex can browse and play films from Dispatcharr's **Xtream Codes output**.
+In Dispatcharr, give your user Xtream credentials (**Users** tab), then in
+EasyPlex open **Settings → Dispatcharr VOD**. The server address is filled in
+from your Plex Live TV tuner when Dispatcharr is set up as one; enter the
+username and password with the TV keyboard and choose **Test and save**. A
+**VOD** item then appears on the home bar.
+
+Films play straight from Dispatcharr in the native player, with the same
+seeking, HUD and failure screen as Plex films. Where you stopped is remembered
+on the box (Continue watching), not in Plex. The Xtream password is stored on
+the box in the app's own storage, as the Plex sign-in is.
 
 ## Licence
 
