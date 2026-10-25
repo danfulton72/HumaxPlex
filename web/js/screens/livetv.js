@@ -329,6 +329,7 @@ export function LiveTvScreen() {
 
   function renderGrid() {
     if (!gridEl) buildGrid();
+    el.classList.remove('ep-sched-active');
     el.classList.add('ep-grid-active');
     const now = Date.now();
     g.clock.textContent = new Date(now).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ';
@@ -529,7 +530,7 @@ export function LiveTvScreen() {
     if (node) node.scrollIntoView({ block: 'nearest' });
   }
   function render() {
-    el.classList.remove('ep-grid-active');
+    el.classList.remove('ep-grid-active', 'ep-sched-active');
     list.innerHTML = '';
     entries.forEach(e => {
       const row = h('div', 'ep-live-row', list);
@@ -680,12 +681,97 @@ export function LiveTvScreen() {
 
   // ---- DVR schedule & recording -----------------------------------------------
 
+  // Recordings: same layout as the guide — info panel for the selected
+  // recording above a list of upcoming recordings in start-time order.
+  let schedEl = null, sg = {}, schedTop = 0, schedState = 'loading', schedError = '';
+  function buildSchedule() {
+    schedEl = h('div', 'hx-sched', el);
+    const top = h('div', 'hx-top', schedEl);
+    h('div', 'hx-title', top).textContent = 'Recordings';
+    sg.clock = h('div', 'hx-clock', top);
+    const panel = h('section', 'hx-info', schedEl);
+    const main = h('div', 'hx-info-main', panel);
+    sg.ch = h('div', 'hx-info-ch', main);
+    sg.title = h('h2', 'hx-info-title', main);
+    sg.sub = h('div', 'hx-info-sub', main);
+    sg.meta = h('div', 'hx-info-meta', main);
+    const side = h('div', 'hx-info-side', panel);
+    sg.summary = h('p', 'hx-info-summary', side);
+    sg.chips = h('div', 'hx-chips', side);
+    const head = h('div', 'hx-times', schedEl);
+    h('div', 'hx-day', head).textContent = 'WHEN';
+    sg.count = h('div', 'hx-day hx-sched-count', head);
+    sg.rows = h('div', 'hx-rows', schedEl);
+    const keys = h('footer', 'hx-keys', schedEl);
+    const key = (label, kind, value) => {
+      const item = h('span', '', keys);
+      const k = h('span', kind, item);
+      if (kind === 'hx-dot') k.style.background = value; else k.textContent = value;
+      item.appendChild(document.createTextNode(label));
+    };
+    key('Choose', 'hx-glyph', '▲▼');
+    key('Page', 'hx-glyph', 'CH+ CH−');
+    h('span', 'hx-sp', keys);
+    key('Back to guide', 'hx-key', 'Back');
+  }
+  function renderSchedule() {
+    if (!schedEl) buildSchedule();
+    el.classList.remove('ep-grid-active');
+    el.classList.add('ep-sched-active');
+    const now = Date.now();
+    sg.clock.textContent = new Date(now).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ';
+    h('b', '', sg.clock).textContent = hhmm(now);
+    sg.count.textContent = schedState === 'ready' && entries.length ?
+      entries.length + (entries.length === 1 ? ' RECORDING SCHEDULED' : ' RECORDINGS SCHEDULED') : '';
+    if (index < schedTop) schedTop = index;
+    if (index >= schedTop + ROWS) schedTop = index - ROWS + 1;
+    schedTop = Math.max(0, Math.min(schedTop, Math.max(0, entries.length - ROWS)));
+    sg.rows.textContent = '';
+    entries.slice(schedTop, schedTop + ROWS).forEach((e, i) => {
+      const sel = schedTop + i === index;
+      const line = h('div', 'hx-row' + (sel ? ' sel' : ''), sg.rows);
+      const when = h('div', 'hx-ch hx-when', line);
+      h('span', 'hx-when-day', when).textContent = Number.isFinite(e.start) ? dayLabel(e.start) : '';
+      h('span', 'hx-when-time', when).textContent = Number.isFinite(e.start) ? hhmm(e.start) + ' – ' + hhmm(e.end) : '--:--';
+      const block = h('div', 'hx-prog hx-sched-prog' + (sel ? ' focus' : e.start <= now ? ' on' : ''), line);
+      h('div', 'hx-pt rec', block).textContent = e.title;
+      h('div', 'hx-pm', block).textContent = [e.episode, e.channel].filter(Boolean).join('  ·  ');
+    });
+    const e = entries[index];
+    sg.meta.textContent = ''; sg.chips.textContent = ''; sg.sub.textContent = '';
+    if (!e) {
+      sg.ch.textContent = '';
+      sg.title.textContent = schedState === 'loading' ? 'Loading recordings…' :
+        schedState === 'error' ? 'Unable to load recordings' : 'No scheduled recordings';
+      sg.summary.textContent = schedState === 'error' ? schedError :
+        schedState === 'loading' ? '' : 'Programmes you record from the guide appear here.';
+      return;
+    }
+    sg.ch.textContent = '';
+    h('b', '', sg.ch).textContent = '● ' + (e.start <= now ? 'RECORDING NOW' : 'SCHEDULED');
+    sg.ch.appendChild(document.createTextNode(e.channel || ''));
+    sg.title.textContent = e.title;
+    sg.sub.textContent = e.episode;
+    if (Number.isFinite(e.start)) {
+      h('span', '', sg.meta).textContent = dayLabel(e.start) + ' ' + hhmm(e.start) + ' – ' + hhmm(e.end);
+      if (e.start > now) h('span', '', sg.meta).textContent = 'Starts in ' + mins(e.start - now);
+      else if (e.end > now) {
+        const bar = h('div', 'hx-bar', sg.meta);
+        h('i', '', bar).style.width = Math.round((now - e.start) / (e.end - e.start) * 100) + '%';
+        h('span', '', sg.meta).textContent = mins(e.end - now) + ' left';
+      }
+    }
+    sg.summary.textContent = e.summary || '';
+    const md = e.md || {};
+    for (const genre of (md.Genre || []).slice(0, 3)) if (genre?.tag) h('span', '', sg.chips).textContent = genre.tag;
+    if (md.year) h('span', '', sg.chips).textContent = String(md.year);
+    if (Number.isFinite(e.start) && e.end > e.start) h('span', '', sg.chips).textContent = mins(e.end - e.start);
+  }
   async function showScheduled() {
     view = 'schedule';
-    el.classList.remove('ep-grid-active');
-    entries = []; index = 0; render();
-    setText(info, 'DVR recording schedule · Back: guide grid');
-    setText(details, 'Loading recordings…');
+    entries = []; index = 0; schedTop = 0; schedState = 'loading';
+    setText(details, '');
+    renderSchedule();
     try {
       const mc = await server.get('/media/subscriptions/scheduled');
       if (view !== 'schedule') return;
@@ -696,15 +782,23 @@ export function LiveTvScreen() {
       entries = ops.map(o => {
         const md = o.Metadata || {};
         const media = (md.Media || [])[0] || {};
+        const { start, end } = airingBounds(md);
+        const rawChannel = media.channelTitle || md.channelTitle || '';
         return {
-          channel: media.channelTitle || md.channelTitle || 'Scheduled',
-          title: md.title || md.grandparentTitle || 'Recording',
-          subtitle: md.summary || md.title || '', item: o,
+          channel: rawChannel ? channelLabel(rawChannel) : '',
+          title: mainTitle(md) || 'Recording',
+          episode: subTitle(md),
+          summary: md.summary || '',
+          start, end, md, item: o,
         };
-      });
-      index = 0; render();
-      if (!entries.length) setText(details, 'No scheduled recordings.');
-    } catch (e) { setText(details, 'Unable to load recordings: ' + e.message); }
+      }).sort((x, y) => (Number.isFinite(x.start) ? x.start : Infinity) - (Number.isFinite(y.start) ? y.start : Infinity));
+      schedState = 'ready';
+      renderSchedule();
+    } catch (e) {
+      if (view !== 'schedule') return;
+      schedState = 'error'; schedError = e.message;
+      renderSchedule();
+    }
   }
   async function dvrPost(path, params = {}, rawQuery = '') {
     const url = server.url(path, params) + (rawQuery ? '&' + rawQuery : '');
@@ -1329,8 +1423,10 @@ export function LiveTvScreen() {
       }
       if (view === 'schedule') {
         switch (action) {
-          case 'up': index = Math.max(0, index - 1); focus(); return true;
-          case 'down': index = Math.min(entries.length - 1, index + 1); focus(); return true;
+          case 'up': index = Math.max(0, index - 1); renderSchedule(); return true;
+          case 'down': index = Math.max(0, Math.min(entries.length - 1, index + 1)); renderSchedule(); return true;
+          case 'pageup': index = Math.max(0, index - ROWS); schedTop = index; renderSchedule(); return true;
+          case 'pagedown': index = Math.max(0, Math.min(entries.length - 1, index + ROWS)); schedTop = index; renderSchedule(); return true;
           case 'back': case 'left': case 'blue': showGrid(); return true;
           default: return true;
         }
