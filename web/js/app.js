@@ -83,14 +83,19 @@ export function boot() {
   log('boot', VERSION, navigator.userAgent);
   window.__androidAction = inject;
   fitWindow();
+  // Reveal the splash only now that the canvas is scaled — before this it is
+  // opacity:0 so the logo never flashes oversized/low-res on first paint.
+  const splash = document.getElementById('splash');
+  if (splash) splash.classList.add('ready');
   window.addEventListener('resize', fitWindow);
   router.init(document.getElementById('app'));
   initHud(() => (router.top() && router.top().name) || '');
   window.addEventListener('easyplex:restart', start);
   start();
-  const splash = document.getElementById('splash');
-  setTimeout(() => {
-    splash.classList.add('gone');
-    setTimeout(() => splash.parentNode && splash.parentNode.removeChild(splash), 400);
-  }, 500);
+  if (splash) {
+    setTimeout(() => {
+      splash.classList.add('gone');
+      setTimeout(() => splash.parentNode && splash.parentNode.removeChild(splash), 400);
+    }, 500);
+  }
 }

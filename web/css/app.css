@@ -53,8 +53,12 @@ html.playing .ambience { display: none; }
   z-index: 50; background: var(--bg);
   transition: opacity 350ms ease;
   will-change: opacity;
+  opacity: 0; /* hidden until JS has scaled the canvas and adds .ready — prevents an
+                 oversized/low-res first paint of the logo before fitWindow() runs */
 }
-#splash img { width: 1920px; height: 1080px; display: block; }
+/* Do NOT force the logo to 1920x1080 here; let .ep-pirate-logo size it (180px,
+   object-fit: contain) so it stays small and sharp even if briefly unscaled. */
+#splash.ready { opacity: 1; }
 #splash.gone { opacity: 0; }
 
 .screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; overflow: hidden; }
