@@ -7,7 +7,7 @@ import { h, setText, setTransform, toggleClass } from '../util/dom.js';
 import { createPlayer } from '../platform/player.js';
 import { setScreenSaver, supports4K } from '../platform/device.js';
 import { session } from '../session.js';
-import { clock, episodeLabel, uuid, mediaDuration } from '../util/format.js';
+import { clock, episodeLabel, uuid } from '../util/format.js';
 import * as icons from '../ui/icons.js';
 import * as router from '../router.js';
 import { log, warn, error } from '../util/log.js';
@@ -103,7 +103,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
   let triedFallback = false;
   let base = 0;             // HLS restarts at an offset; player time is relative to it
   let position = offset || 0;
-  let duration = mediaDuration(initial);
+  let duration = initial.duration || 0;
   let paused = false;
   let started = false;
   let alive = true;
@@ -129,15 +129,6 @@ export function PlayerScreen(initial, { offset = null } = {}) {
       if (!started) return;
       position = base + ms;
       if (seekTarget == null) renderProgress(position);
-    },
-    // The player measures the file itself; trust it over Plex's metadata when
-    // they disagree (direct play only: an HLS stream starts at the offset and
-    // grows while Plex converts it).
-    onDuration(ms) {
-      if (mode !== 'direct' || !(ms > 0) || Math.abs(ms - duration) < 2000) return;
-      log('duration from player', clock(ms), 'Plex said', clock(duration));
-      duration = ms;
-      renderProgress(position);
     },
     onBuffering(on) { toggleClass(spinner, 'on', on); },
     onEnd() { finished(); },
@@ -336,7 +327,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
       const full = await session.server.metadata(item.ratingKey);
       if (!alive) return;
       item = full;
-      duration = mediaDuration(item) || duration;
+      duration = item.duration || duration;
       media = (item.Media || [])[0];
       part = media && media.Part && media.Part[0];
       if (!part) throw new Error('No playable media');

@@ -171,15 +171,3 @@ test('channelRowsFrom joins watch-now listings to lineup guide keys', () => {
   assert.equal(rows[0].dvrId, '7');
   assert.deepEqual(hp.channelRowsFrom(urls, [{ status: 'rejected' }, { status: 'rejected' }], '7'), []);
 });
-
-test('mediaDuration prefers the measured file length over agent metadata', async () => {
-  const { mediaDuration, progress, metaLine } = await import('../web/js/util/format.js');
-  // An NFO runtime of 22 minutes on a 41-minute file.
-  const ep = { type: 'movie', duration: 1320000, viewOffset: 1200000, Media: [{ duration: 2460000, Part: [{ duration: 2460000 }] }] };
-  assert.equal(mediaDuration(ep), 2460000);
-  assert.equal(mediaDuration({ duration: 5, Media: [{ Part: [{ duration: 7 }] }] }), 7);
-  assert.equal(mediaDuration({ duration: 5 }), 5);
-  assert.equal(mediaDuration({}), 0);
-  assert.ok(Math.abs(progress(ep) - 1200000 / 2460000) < 1e-9);
-  assert.match(metaLine(ep), /41m/);
-});

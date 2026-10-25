@@ -19,15 +19,6 @@ export function episodeLabel(item) {
   return 'S' + (item.parentIndex || 0) + ' · E' + (item.index || 0);
 }
 
-// Length of the actual file. Plex's item-level duration can come from agent
-// or NFO metadata (often a rounded runtime such as exactly 22 minutes), while
-// Media/Part durations are measured from the file when it is analysed.
-export function mediaDuration(item) {
-  const media = item && item.Media && item.Media[0];
-  const part = media && media.Part && media.Part[0];
-  return (media && media.duration) || (part && part.duration) || (item && item.duration) || 0;
-}
-
 // The line under a title: "2019 · PG-13 · 2h 4m" style.
 export function metaLine(item) {
   const parts = [];
@@ -39,15 +30,14 @@ export function metaLine(item) {
   }
   if (item.contentRating) parts.push(item.contentRating);
   if (item.type === 'show' && item.childCount) parts.push(item.childCount + (item.childCount === 1 ? ' season' : ' seasons'));
-  else if (mediaDuration(item)) parts.push(duration(mediaDuration(item)));
+  else if (item.duration) parts.push(duration(item.duration));
   if (item.audienceRating) parts.push('★ ' + Number(item.audienceRating).toFixed(1));
   return parts.join('  ·  ');
 }
 
 export function progress(item) {
-  const total = mediaDuration(item);
-  if (!item.viewOffset || !total) return 0;
-  return Math.min(1, item.viewOffset / total);
+  if (!item.viewOffset || !item.duration) return 0;
+  return Math.min(1, item.viewOffset / item.duration);
 }
 
 export function uuid() {

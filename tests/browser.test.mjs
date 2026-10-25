@@ -164,12 +164,6 @@ test('signed-in app: exit, options, library, playback, failure, settings', async
   let hud = (await calls()).hud.at(-1);
   assert.equal(hud.t, 'The Long Road  (2024)');
   assert.match(hud.line, /Ends \d\d:\d\d$/);
-  // The player's measured length wins over Plex's metadata.
-  await page.evaluate(() => window.__easyplexVideoEvent('duration', 7200000));
-  await page.evaluate(() => window.__easyplexVideoEvent('time', 1300000));
-  await page.waitForTimeout(1000);
-  await page.evaluate(() => window.__easyplexVideoEvent('time', 1301000));
-  assert.match((await calls()).hud.at(-1).line, / \/ 2:00:00 /);
   await key('right'); await key('right'); await key('right');
   hud = (await calls()).hud.at(-1);
   assert.match(hud.line, /^Seek to /);
