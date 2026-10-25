@@ -13,6 +13,7 @@ import * as router from '../router.js';
 import { log, warn, error } from '../util/log.js';
 import { request } from '../plex/client.js';
 import { parseSubtitles, CueTrack } from '../player/subtitles.js';
+import { setLastPlayed } from '../util/lastplayed.js';
 
 // What Android TV boxes reliably decode natively with Media3. No DTS.
 // av1 is NOT listed here: it's only direct-played when the box reports a decoder
@@ -340,6 +341,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
       const full = await session.server.metadata(item.ratingKey);
       if (!alive) return;
       item = full;
+      setLastPlayed(item);
       duration = item.duration || duration;
       media = (item.Media || [])[0];
       part = media && media.Part && media.Part[0];

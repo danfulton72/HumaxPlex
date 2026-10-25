@@ -9,6 +9,7 @@ import * as icons from '../ui/icons.js';
 import * as router from '../router.js';
 import { playItem, itemOptions } from '../nav.js';
 import { error } from '../util/log.js';
+import { takeLastPlayed } from '../util/lastplayed.js';
 
 const SHIFT = 400; // how far the body slides up to reveal seasons/episodes
 
@@ -36,6 +37,7 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
   let zone = 'buttons';
   let alive = true;
   let shown = false;
+  let returnTo = null;   // episode just watched: land back on it after playback
 
   const isShowLike = () => item.type === 'show';
 
@@ -142,8 +144,11 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
       episodes.items = kids;
       episodes.row.setItems(kids);
     }
-    // Land on the first unwatched episode.
-    const next = kids.findIndex(k => !k.viewCount || k.viewOffset);
+    // Back from playback: the episode that was playing. Otherwise the first
+    // unwatched one.
+    const back = returnTo ? kids.findIndex(k => String(k.ratingKey) === returnTo.ratingKey) : -1;
+    returnTo = null;
+    const next = back >= 0 ? back : kids.findIndex(k => !k.viewCount || k.viewOffset);
     episodes.row.focusIndex(next >= 0 ? next : 0);
     renderFocus();
   }
@@ -162,7 +167,8 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
         if (!alive) return;
         const deckSeason = item.onDeck ? seasons.findIndex(s => s.ratingKey === item.onDeck.parentRatingKey) : -1;
         const pref = preferSeason ? seasons.findIndex(s => s.ratingKey === preferSeason) : -1;
-        seasonIndex = pref >= 0 ? pref : (deckSeason >= 0 ? deckSeason : 0);
+        const played = returnTo ? seasons.findIndex(s => String(s.ratingKey) === returnTo.parentRatingKey) : -1;
+        seasonIndex = played >= 0 ? played : pref >= 0 ? pref : (deckSeason >= 0 ? deckSeason : 0);
         renderSeasons();
         if (seasons[seasonIndex]) await loadEpisodes(seasons[seasonIndex]);
       }
@@ -212,6 +218,8 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
       ambience.restore();
       // Back from the player: refresh resume points and watched state.
       if (shown) {
+        const last = takeLastPlayed();
+        returnTo = last && last.type === 'episode' && isShowLike() && last.grandparentRatingKey === String(item.ratingKey) ? last : null;
         session.server.invalidate();
         load();
       }
