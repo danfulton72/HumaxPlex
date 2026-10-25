@@ -3,7 +3,6 @@ function nativeBackend(container, listener) {
   let currentTime = 0;
   let currentState = 'NONE';
   let ready = null;
-  let timer = 0;
   window.__easyplexVideoEvent = (name, value) => {
     if (name === 'ready') {
       currentState = 'PLAYING';

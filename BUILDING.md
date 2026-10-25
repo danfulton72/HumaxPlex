@@ -25,6 +25,30 @@ at 1920×1080. Arrow keys, Enter, Backspace (back) and M (menu) act as the
 remote. Plex sign-in works; video playback and Live TV tuning need the Android
 app, because they go through the native player.
 
+## Tests
+
+With Node 22:
+
+```bash
+npm ci                       # test tools only; nothing here ships in the APK
+npm run lint                 # ESLint over web/js and tests
+npm test                     # unit tests + Live TV tests (jsdom, fake Plex)
+npx playwright install chromium
+npm run test:browser         # whole app in headless Chromium, fake Plex
+npm run ci                   # all of the above
+```
+
+- `tests/unit.test.mjs` — pure helpers (dates, airing times, channel names).
+- `tests/livetv.test.mjs` — the Live TV screen driven key by key against a
+  fake Plex server and native shell (`tests/helpers/fake-plex.mjs`). The fake
+  responses follow Plex's real shapes; when Plex surprises us, copy the shape
+  from the Green diagnostics page into the fake and add a test.
+- `tests/browser.test.mjs` — sign-in at TV resolutions, options lists,
+  library filter, film playback HUD, failure screen, settings.
+
+GitHub Actions runs the **Tests** workflow on every branch push and pull
+request, and the APK build only runs once the tests pass.
+
 ## Installing
 
 Copy the APK onto a USB stick (or use a "Send files to TV" app), open it with

@@ -4,7 +4,7 @@ import { deviceInfo } from '../platform/device.js';
 import { h, toggleClass } from '../util/dom.js';
 import { session, signOut, useServer, activateHomeUser } from '../session.js';
 import { getServers, connect } from '../plex/auth.js';
-import { request, identity } from '../plex/client.js';
+import { identity } from '../plex/client.js';
 import * as router from '../router.js';
 import { ServerPicker } from './login.js';
 import { error } from '../util/log.js';

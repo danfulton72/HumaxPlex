@@ -1,5 +1,5 @@
 // Boot: restore the session and go straight to Home when we can; otherwise sign in.
-import { DEV, DEV_HOST, DEV_PLEX_URL, VERSION } from './config.js';
+import { DEV, DEV_PLEX_URL, VERSION } from './config.js';
 import * as router from './router.js';
 import { inject } from './input.js';
 import { session, reconnect, signOut } from './session.js';

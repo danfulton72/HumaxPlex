@@ -1,5 +1,5 @@
 // plex.tv sign-in (PIN / plex.tv/link) and server discovery.
-import { request, clientId, PRODUCT, query } from './client.js';
+import { request } from './client.js';
 import { log, warn } from '../util/log.js';
 
 const TV = 'https://plex.tv/api/v2';

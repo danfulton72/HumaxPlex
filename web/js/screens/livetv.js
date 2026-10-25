@@ -14,9 +14,8 @@
 import { h, setText } from '../util/dom.js';
 import { session } from '../session.js';
 import { useAmbience } from '../ui/backdrop.js';
-import * as router from '../router.js';
 import { identity } from '../plex/client.js';
-import { showOptions, closeOptions, toast } from '../ui/options.js';
+import { showOptions, closeOptions } from '../ui/options.js';
 
 // Reuse EPG results when the screen is reopened during the same app session.
 // Keys are "<local YYYY-MM-DD>:<gridKey>", values {time, shows}.
@@ -130,7 +129,6 @@ export function LiveTvScreen({ autoplay = false } = {}) {
     }
     return null;
   }
-  function guideKnown(row, when) { return !!(row?.gridKey && cached(localDate(when), row)); }
 
   async function fetchDay(row, date) {
     const cacheKey = date + ':' + row.gridKey;
