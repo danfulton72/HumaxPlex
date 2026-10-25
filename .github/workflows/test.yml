@@ -1,0 +1,27 @@
+name: Tests
+on:
+  push:
+    branches-ignore: [main]   # main runs these through the APK workflow
+  pull_request:
+  workflow_call:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install test tools
+        run: npm ci
+      - name: Lint web UI and tests
+        run: npm run lint
+      - name: Unit and Live TV tests
+        run: npm test
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        run: npm run test:browser

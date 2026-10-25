@@ -51,7 +51,7 @@ function parseAss(text) {
 }
 
 export function parseSubtitles(text, codec) {
-  text = text.replace(/\r\n/g, '\n').replace(/^﻿/, '');
+  text = text.replace(/\r\n/g, '\n').replace(/^\uFEFF/, '');
   if (codec === 'ass' || codec === 'ssa' || /^\[Script Info\]/m.test(text)) return parseAss(text);
   return parseSrtOrVtt(text);
 }

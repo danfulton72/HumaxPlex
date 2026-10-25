@@ -28,11 +28,9 @@ export function SearchScreen() {
   let rows = [];
   let rowIndex = -1; // -1 = input
   let timer = 0;
-  let query = '';
   let generation = 0;
 
   async function run(q) {
-    query = q;
     const gen = ++generation;
     if (q.length < 2) { setRows([]); setText(status, ''); return; }
     setText(status, 'Searching…');
