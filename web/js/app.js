@@ -1,7 +1,6 @@
 // Boot: restore the session and go straight to Home when we can; otherwise sign in.
 import { DEV, DEV_HOST, DEV_PLEX_URL, VERSION } from './config.js';
 import * as router from './router.js';
-import { isTizen, registerKeys } from './platform/tizen.js';
 import { inject } from './input.js';
 import { session, reconnect, signOut } from './session.js';
 import { HomeScreen } from './screens/home.js';
@@ -41,8 +40,8 @@ async function verify() {
 function fitWindow() {
   const root = document.documentElement;
   const body = document.body;
-  // Some Android TV WebViews report physical-size innerWidth but logical-size screen.width.
-  // This Humax reports inner=1920x1080, screen=960x540, DPR=2.
+  // Some Android TV WebViews report physical-size innerWidth but logical-size
+  // screen.width (e.g. inner=1920x1080, screen=960x540, DPR=2), so use the smaller.
   const w = Math.min(window.innerWidth, window.screen.width || window.innerWidth);
   const h = Math.min(window.innerHeight, window.screen.height || window.innerHeight);
   const scale = Math.min(w / 1920, h / 1080);
@@ -82,17 +81,12 @@ function start() {
 export function boot() {
   if (DEV) window.__ss = { router, session, nav };
   log('boot', VERSION, navigator.userAgent);
-  registerKeys();
   window.__androidAction = inject;
-  if (!isTizen) {
-    fitWindow();
-    window.addEventListener('resize', fitWindow);
-  }
+  fitWindow();
+  window.addEventListener('resize', fitWindow);
   router.init(document.getElementById('app'));
   initHud(() => (router.top() && router.top().name) || '');
-  window.addEventListener('samsucks:restart', start);
-  // Dev builds only; release builds don't ship js/dev/.
-  if (DEV && DEV_HOST) import('./dev/remote.js').then(m => m.startDevRemote());
+  window.addEventListener('easyplex:restart', start);
   start();
   const splash = document.getElementById('splash');
   setTimeout(() => {

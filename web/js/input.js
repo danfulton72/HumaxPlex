@@ -2,7 +2,7 @@
 // (extra presses of the same key in one frame collapse), so holding a direction
 // can never queue up work and the UI stops the instant the key is released.
 // While a key is held, <html> gets .fast which shortens transitions.
-import { actionFor } from './platform/tizen.js';
+import { actionFor } from './platform/device.js';
 
 const NAV = { left: 1, right: 1, up: 1, down: 1 };
 

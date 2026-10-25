@@ -3,7 +3,7 @@
 //
 // A screen is { el, onKey(action) -> bool?, onShow?(), onHide?(), destroy?() }.
 import { setHandler } from './input.js';
-import { exitApp } from './platform/tizen.js';
+import { exitApp } from './platform/device.js';
 
 const stack = [];
 let root = null;

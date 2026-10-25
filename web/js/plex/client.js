@@ -1,10 +1,10 @@
 // Shared request plumbing for plex.tv and Plex Media Server.
 import { VERSION } from '../config.js';
-import { deviceInfo } from '../platform/tizen.js';
+import { deviceInfo } from '../platform/device.js';
 import * as store from '../util/store.js';
 import { uuid } from '../util/format.js';
 
-export const PRODUCT = 'HumaxPlex';
+export const PRODUCT = 'EasyPlex';
 
 let clientId = store.get('clientId');
 if (!clientId) {
@@ -15,15 +15,15 @@ export { clientId };
 
 const device = deviceInfo();
 
-// Identity params, also needed as query params on URLs we hand to AVPlay
-// (which can't send headers).
+// Identity params, also needed as query params on URLs handed to the native
+// player (which can't send headers).
 export function identity() {
   return {
     'X-Plex-Product': PRODUCT,
-    'X-Plex-Version': VERSION,
+    'X-Plex-Version': device.appVersion || VERSION,
     'X-Plex-Client-Identifier': clientId,
     'X-Plex-Platform': device.platform,
-    'X-Plex-Platform-Version': '9',
+    'X-Plex-Platform-Version': device.version || '9',
     'X-Plex-Device': device.model,
     'X-Plex-Device-Name': device.name,
     'X-Plex-Model': device.model,

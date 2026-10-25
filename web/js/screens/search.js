@@ -1,4 +1,4 @@
-// Search across the server. Focusing the input brings up Samsung's on-screen
+// Search across the server. Focusing the input brings up the TV's on-screen
 // keyboard; results update as you type.
 import { h, setText, setTransform } from '../util/dom.js';
 import { Row } from '../ui/row.js';

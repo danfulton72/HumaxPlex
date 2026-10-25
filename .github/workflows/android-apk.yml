@@ -1,4 +1,4 @@
-name: Build HumaxPlex debug APK
+name: Build EasyPlex debug APK
 on:
   workflow_dispatch:
   push:
@@ -31,26 +31,26 @@ jobs:
           python scripts/make_tv_banner.py
       - name: Install persistent signing certificate
         env:
-          HUMAX_KEYSTORE_BASE64: ${{ secrets.HUMAX_KEYSTORE_BASE64 }}
-          HUMAX_KEYSTORE_PASSWORD: ${{ secrets.HUMAX_KEYSTORE_PASSWORD }}
-          HUMAX_KEY_ALIAS: ${{ secrets.HUMAX_KEY_ALIAS }}
-          HUMAX_KEY_PASSWORD: ${{ secrets.HUMAX_KEY_PASSWORD }}
+          EASYPLEX_KEYSTORE_BASE64: ${{ secrets.EASYPLEX_KEYSTORE_BASE64 || secrets.HUMAX_KEYSTORE_BASE64 }}
+          EASYPLEX_KEYSTORE_PASSWORD: ${{ secrets.EASYPLEX_KEYSTORE_PASSWORD || secrets.HUMAX_KEYSTORE_PASSWORD }}
+          EASYPLEX_KEY_ALIAS: ${{ secrets.EASYPLEX_KEY_ALIAS || secrets.HUMAX_KEY_ALIAS }}
+          EASYPLEX_KEY_PASSWORD: ${{ secrets.EASYPLEX_KEY_PASSWORD || secrets.HUMAX_KEY_PASSWORD }}
         run: |
-          if [ -z "$HUMAX_KEYSTORE_BASE64" ] || [ -z "$HUMAX_KEYSTORE_PASSWORD" ] || [ -z "$HUMAX_KEY_ALIAS" ] || [ -z "$HUMAX_KEY_PASSWORD" ]; then
-            echo "::error::Persistent signing is not configured. Set the four HUMAX_* repository Actions secrets (see README)."
+          if [ -z "$EASYPLEX_KEYSTORE_BASE64" ] || [ -z "$EASYPLEX_KEYSTORE_PASSWORD" ] || [ -z "$EASYPLEX_KEY_ALIAS" ] || [ -z "$EASYPLEX_KEY_PASSWORD" ]; then
+            echo "::error::Persistent signing is not configured. Set the four EASYPLEX_* repository Actions secrets (see README); the older HUMAX_* names are also accepted."
             exit 1
           fi
-          printf '%s' "$HUMAX_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/humax-release.jks"
-          chmod 600 "$RUNNER_TEMP/humax-release.jks"
-          keytool -list -keystore "$RUNNER_TEMP/humax-release.jks" -storepass "$HUMAX_KEYSTORE_PASSWORD" >/dev/null
-          echo "HUMAX_KEYSTORE_PATH=$RUNNER_TEMP/humax-release.jks" >> "$GITHUB_ENV"
-          echo "HUMAX_KEYSTORE_PASSWORD=$HUMAX_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "HUMAX_KEY_ALIAS=$HUMAX_KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "HUMAX_KEY_PASSWORD=$HUMAX_KEY_PASSWORD" >> "$GITHUB_ENV"
+          printf '%s' "$EASYPLEX_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/easyplex-release.jks"
+          chmod 600 "$RUNNER_TEMP/easyplex-release.jks"
+          keytool -list -keystore "$RUNNER_TEMP/easyplex-release.jks" -storepass "$EASYPLEX_KEYSTORE_PASSWORD" >/dev/null
+          echo "EASYPLEX_KEYSTORE_PATH=$RUNNER_TEMP/easyplex-release.jks" >> "$GITHUB_ENV"
+          echo "EASYPLEX_KEYSTORE_PASSWORD=$EASYPLEX_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "EASYPLEX_KEY_ALIAS=$EASYPLEX_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "EASYPLEX_KEY_PASSWORD=$EASYPLEX_KEY_PASSWORD" >> "$GITHUB_ENV"
       - name: Compile APK
         run: cd android && gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: HumaxPlex-debug-apk
-          path: android/app/build/outputs/apk/debug/HumaxPlex-debug.apk
+          name: EasyPlex-debug-apk
+          path: android/app/build/outputs/apk/debug/EasyPlex-debug.apk
           if-no-files-found: error

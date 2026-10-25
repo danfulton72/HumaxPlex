@@ -49,10 +49,10 @@ export function HomeScreen() {
 
   const top = h('header', 'topbar', el);
   const brand = h('div', 'brand', top);
-  h('img', 'brand-mark', brand).src = 'img/mascot.png';
+  h('img', 'brand-mark', brand).src = 'img/easyplex-logo.jpg';
   const brandText = h('div', 'brand-text', brand);
-  h('div', 'humax-wordmark', brandText).textContent = 'HumaxPlex';
-  h('div', 'brand-by', brandText).textContent = 'Plex for Humax';
+  h('div', 'ep-wordmark', brandText).textContent = 'EasyPlex';
+  h('div', 'brand-by', brandText).textContent = 'Plex for Android TV';
   // The nav is a clip with a sliding track, so any number of libraries fits.
   const navEl = h('nav', 'nav', top);
   const navTrack = h('div', 'nav-track', navEl);

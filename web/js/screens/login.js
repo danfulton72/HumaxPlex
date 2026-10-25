@@ -14,10 +14,10 @@ export function LoginScreen({ onDone }) {
   const left = h('div', 'login-art', el);
   const art = h('img', '', left);
   art.style.display = 'none';
-  const welcome = h('div', 'humax-login-brand', left);
-  welcome.innerHTML = '<span class="humax-pirate">☠</span><strong>Humax<span>Plex</span></strong><small>PLEX FOR HUMAX</small>';
+  const welcome = h('div', 'ep-login-brand', left);
+  welcome.innerHTML = '<img class="ep-pirate-logo" src="img/easyplex-logo.jpg" alt=""><strong>Easy<span>Plex</span></strong><small>PLEX FOR ANDROID TV</small>';
   const panel = h('div', 'login-panel', el);
-  h('h1', 'login-title', panel).textContent = 'Link HumaxPlex to Plex';
+  h('h1', 'login-title', panel).textContent = 'Link EasyPlex to Plex';
   const steps = h('ol', 'login-steps', panel);
   h('li', '', steps).innerHTML = 'On your phone or computer, go to <b>plex.tv/link</b>';
   h('li', '', steps).textContent = 'Enter this code:';

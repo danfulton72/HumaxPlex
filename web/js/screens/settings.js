@@ -1,5 +1,6 @@
 // Account, server and diagnostics.
 import { DEV, VERSION } from '../config.js';
+import { deviceInfo } from '../platform/device.js';
 import { h, toggleClass } from '../util/dom.js';
 import { session, signOut, useServer, activateHomeUser } from '../session.js';
 import { getServers, connect } from '../plex/auth.js';
@@ -16,7 +17,7 @@ export function SettingsScreen() {
   h('h1', 'settings-title', el).textContent = 'Settings';
   const list = h('div', 'settings-list', el);
   const foot = h('div', 'settings-foot', el);
-  foot.textContent = 'HumaxPlex ' + VERSION + (DEV ? ' (dev)' : '') + ' · ' + (session.server ? session.server.uri.replace(/X-Plex-Token=.*/, '') : '');
+  foot.textContent = 'EasyPlex ' + (deviceInfo().appVersion || VERSION) + (DEV ? ' (dev)' : '') + ' · ' + (session.server ? session.server.uri.replace(/X-Plex-Token=.*/, '') : '');
 
   let index = 0;
   let items = [];
@@ -130,7 +131,7 @@ export function SettingsScreen() {
 
   function restart() {
     // Rebuild from scratch: app.js decides between login and home.
-    window.dispatchEvent(new Event('samsucks:restart'));
+    window.dispatchEvent(new Event('easyplex:restart'));
   }
 
   build();

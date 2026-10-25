@@ -1,11 +1,11 @@
 // Playback. Direct play whenever the TV can decode the file (hardware, zero
 // server load); otherwise ask Plex for HLS with the video passed through and
 // only the audio/container converted. Seeking previews locally and only
-// commits once the user stops pressing, because AVPlay seeks are slow.
+// commits once the user stops pressing, because seeks on TV players are slow.
 import { DEV } from '../config.js';
 import { h, setText, setTransform, toggleClass } from '../util/dom.js';
 import { createPlayer } from '../platform/player.js';
-import { setScreenSaver, supports4K } from '../platform/tizen.js';
+import { setScreenSaver, supports4K } from '../platform/device.js';
 import { session } from '../session.js';
 import { clock, episodeLabel, uuid } from '../util/format.js';
 import * as icons from '../ui/icons.js';
@@ -14,7 +14,7 @@ import { log, warn, error } from '../util/log.js';
 import { request } from '../plex/client.js';
 import { parseSubtitles, CueTrack } from '../player/subtitles.js';
 
-// What a 2022 Samsung (Tizen 6.5) decodes natively. No DTS on 2018+ models.
+// What Android TV boxes reliably decode natively with Media3. No DTS.
 const DIRECT = {
   container: { mp4: 1, m4v: 1, mkv: 1 },
   video: { h264: 1, hevc: 1 },
@@ -84,16 +84,16 @@ export function PlayerScreen(initial, { offset = null } = {}) {
   let media = null;
   let part = null;
   let mode = 'direct';
-  let humaxQuality = null;
-  window.__humaxSetQuality = (bitrate, resolution) => {
+  let nativeQuality = null;
+  window.__easyplexSetQuality = (bitrate, resolution) => {
     if (!alive || !media || !part) return;
-    humaxQuality = bitrate > 0 ? { bitrate, resolution } : null;
-    mode = humaxQuality ? 'hls' : decideMode();
+    nativeQuality = bitrate > 0 ? { bitrate, resolution } : null;
+    mode = nativeQuality ? 'hls' : decideMode();
     triedFallback = false;
     open(position).catch(e => failed(e.message || String(e)));
   };
   let triedFallback = false;
-  let base = 0;             // HLS restarts at an offset; AVPlay time is relative to it
+  let base = 0;             // HLS restarts at an offset; player time is relative to it
   let position = offset || 0;
   let duration = initial.duration || 0;
   let paused = false;
@@ -219,8 +219,8 @@ export function PlayerScreen(initial, { offset = null } = {}) {
         session: playSession, offsetMs: atMs,
         audioStreamID: audioStream && audioStream.id,
         subtitleStreamID: burn ? subStream.id : undefined,
-        maxBitrate: humaxQuality ? humaxQuality.bitrate : 40000,
-        resolution: humaxQuality ? humaxQuality.resolution : '3840x2160',
+        maxBitrate: nativeQuality ? nativeQuality.bitrate : 40000,
+        resolution: nativeQuality ? nativeQuality.resolution : '3840x2160',
       });
       // PMS 1.42+ rejects start.m3u8 unless a decision was made for the session first.
       const decision = await request(url.replace('/start.m3u8', '/decision'));
@@ -247,7 +247,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
     startTimeline();
   }
 
-  // Map Plex's chosen streams onto AVPlay's track list (same file order).
+  // Map Plex's chosen streams onto the player's track list (same file order).
   function applyTracks() {
     const t = player.tracks();
     if (audioStream && t.audio.length > 1) {
@@ -513,7 +513,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
     clearInterval(timelineTimer);
     clearInterval(upnextTimer);
     clearInterval(cueTimer);
-    if (window.__humaxSetQuality) delete window.__humaxSetQuality;
+    if (window.__easyplexSetQuality) delete window.__easyplexSetQuality;
     player.destroy();
     if (mode === 'hls') session.server.stopTranscode(playSession);
     document.documentElement.classList.remove('playing');

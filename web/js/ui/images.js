@@ -42,7 +42,7 @@ function pump() {
       pump();
     };
     loader.onload = () => done(true);
-    loader.onerror = () => { console.warn('HumaxPlex image load failed', job.url.split('?')[0]); if (typeof HumaxVideo !== 'undefined') HumaxVideo.imageFailed(job.url.split('?')[0]); done(false); };
+    loader.onerror = () => { console.warn('EasyPlex image load failed', job.url.split('?')[0]); if (typeof EasyPlexVideo !== 'undefined') EasyPlexVideo.imageFailed(job.url.split('?')[0]); done(false); };
     loader.src = job.url;
   }
 }

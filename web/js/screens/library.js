@@ -26,7 +26,7 @@ export function LibraryScreen(section) {
   const count = h('div', 'lib-count', head);
   const sortEl = h('div', 'lib-sort', head);
   const focusInfo = h('div', 'lib-focus', el);
-  const alphaRail = h('div', 'humax-alpha', el);
+  const alphaRail = h('div', 'ep-alpha', el);
   const hint = h('div', 'lib-hint', el);
   hint.innerHTML = '<i class="key-yellow"></i> Sort &nbsp;&nbsp; CH ▲▼ Jump';
 
@@ -41,7 +41,7 @@ export function LibraryScreen(section) {
     alphaRail.innerHTML = '';
     alphaRail.style.display = letters.length ? '' : 'none';
     letters.forEach((l, i) => {
-      const node = h('div', 'humax-alpha-letter', alphaRail);
+      const node = h('div', 'ep-alpha-letter', alphaRail);
       node.textContent = l.title;
       node.classList.toggle('focus', alphaMode && i === alphaIndex);
       node.classList.toggle('selected', grid.index >= l.start &&

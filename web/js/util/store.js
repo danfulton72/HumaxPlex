@@ -1,4 +1,4 @@
-// localStorage wrapper. Tizen keeps it across app restarts; it can throw when full.
+// localStorage wrapper. It persists across app restarts; it can throw when full.
 const PREFIX = 'ss.';
 
 export function get(key, fallback) {

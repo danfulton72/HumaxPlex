@@ -32,7 +32,7 @@ export class Server {
   // only ever downloads and decodes pixels it actually shows.
   image(path, width, height, { blur = 0, quality = 85, format = 'jpeg' } = {}) {
     if (!path) return '';
-    if (typeof HumaxVideo !== 'undefined') {
+    if (typeof EasyPlexVideo !== 'undefined') {
       return 'https://appassets.androidplatform.net/pleximg?url=' + encodeURIComponent(this.url(path));
     }
     return withQuery(this.uri + '/photo/:/transcode', {

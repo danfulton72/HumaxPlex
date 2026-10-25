@@ -1,12 +1,12 @@
 /* Live TV guide (timeline with info panel). Appended to css/app.css by apply.py. */
-.humax-grid-active .settings-title,
-.humax-grid-active .humax-live-status,
-.humax-grid-active .humax-live-list { display: none !important; }
+.ep-grid-active .settings-title,
+.ep-grid-active .ep-live-status,
+.ep-grid-active .ep-live-list { display: none !important; }
 
 .hx-grid { display: none; position: absolute; inset: 0; z-index: 5; box-sizing: border-box;
   padding: 44px 80px 36px; background: #0B0D12; color: #FFF7E6; font-family: var(--body);
   flex-direction: column; gap: 20px; overflow: hidden; }
-.humax-grid-active .hx-grid { display: flex; }
+.ep-grid-active .hx-grid { display: flex; }
 
 .hx-top { display: flex; justify-content: space-between; align-items: baseline; flex: none; }
 .hx-title { font: 700 46px/1 var(--display); letter-spacing: .5px; }
@@ -65,10 +65,10 @@
 .hx-dot { width: 16px; height: 16px; border-radius: 8px; }
 
 /* Messages (tuning, recording) float above the guide and clear themselves. */
-.humax-grid-active .humax-live-detail { position: absolute; z-index: 6; left: 50%; right: auto; bottom: 96px;
+.ep-grid-active .ep-live-detail { position: absolute; z-index: 6; left: 50%; right: auto; bottom: 96px;
   transform: translateX(-50%); max-width: 1200px; max-height: none; padding: 16px 28px; border-radius: 14px;
   background: #2B3142; color: #FFF7E6; font-size: 22px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
-.humax-grid-active .humax-live-detail:empty { display: none; }
+.ep-grid-active .ep-live-detail:empty { display: none; }
 
 /* Record dialog: what to record and which library/folder to save it in. */
 .hx-dialog { position: absolute; inset: 0; z-index: 20; background: rgba(5,7,10,.74);
@@ -94,3 +94,8 @@
 .hx-dlg-status { font-size: 20px; color: #FFD9D6; min-height: 26px; }
 .hx-dlg-status:empty { min-height: 0; }
 .hx-dlg-hint { font-size: 17px; color: rgba(255,247,230,.6); }
+
+/* Options list opened by holding OK (remotes without colour keys). */
+.hx-menu { width: 620px; }
+.hx-menu-list { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 6px; }
+.hx-menu-item { font-size: 26px; padding: 16px 26px; }

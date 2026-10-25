@@ -136,6 +136,6 @@ export class HeroArt {
       this.front = 1 - this.front;
     };
     loader.onload = swap;
-    loader.onerror = () => { if (typeof HumaxVideo !== 'undefined') HumaxVideo.imageFailed(url.split('?')[0]); };
+    loader.onerror = () => { if (typeof EasyPlexVideo !== 'undefined') EasyPlexVideo.imageFailed(url.split('?')[0]); };
   }
 }
