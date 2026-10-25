@@ -6,6 +6,7 @@ import { session } from '../session.js';
 import { useAmbience } from '../ui/backdrop.js';
 import { toast } from '../ui/options.js';
 import * as router from '../router.js';
+import { VodProfilesScreen } from './vodprofiles.js';
 import {
   loadConfig, saveConfig, clearConfig, normaliseServer, XtreamClient, friendlyError,
 } from '../xtream/api.js';
@@ -63,7 +64,10 @@ export function VodSetupScreen({ onSaved } = {}) {
   const user = field('Username', saved.username);
   const pass = field('Password', saved.password, 'password');
   const items = [server, user, pass, button('Test and save', testAndSave)];
-  if (loadConfig()) items.push(button('Remove VOD from EasyPlex', remove));
+  if (loadConfig()) {
+    items.push(button('Categories for each profile…', () => router.push(VodProfilesScreen())));
+    items.push(button('Remove VOD from EasyPlex', remove));
+  }
 
   let index = 0;
   let busy = false;

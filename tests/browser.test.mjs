@@ -71,6 +71,13 @@ const SHOW = {
   ...Object.fromEntries(EPISODES.map(e => ['/library/metadata/' + e.ratingKey, [e]])),
 };
 
+// Plex Home: the admin (with a PIN) and a child's managed profile.
+const HOME_USERS = [
+  { id: 1, uuid: 'admin-uuid', title: 'Dan', admin: true, restricted: false, protected: true },
+  { id: 2, uuid: 'kid-uuid', title: 'Ella', admin: false, restricted: true, protected: false },
+];
+const XT_CONFIG = `localStorage.setItem('ss.xtream', JSON.stringify({ server: 'http://xtream.test', username: 'dan', password: 'pw' }));`;
+
 // A Dispatcharr Xtream output with two categories.
 const XT_CATS = [{ category_id: '1', category_name: 'Action', parent_id: 0 }, { category_id: '2', category_name: 'Drama', parent_id: 0 }];
 const XT_FILMS = [
@@ -84,9 +91,9 @@ const XT_INFO = {
   movie_data: { stream_id: 11, container_extension: 'mkv' },
 };
 
-async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true } = {}) {
+async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true, extra = '' } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: scale });
-  await ctx.addInitScript(NATIVE + (signedIn ? SIGNED_IN : ''));
+  await ctx.addInitScript(NATIVE + (signedIn ? SIGNED_IN : '') + extra);
   const seen = [], xtreamSeen = [];
   await ctx.route('http://pms.test/**', route => {
     const u = new URL(route.request().url());
@@ -118,7 +125,13 @@ async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true
     if (action === 'get_vod_info') return json(200, XT_INFO);
     return json(200, []);
   });
-  await ctx.route('**/plex.tv/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 1, code: 'ABCD' }) }));
+  await ctx.route('**/plex.tv/**', route => {
+    const p = new URL(route.request().url()).pathname;
+    let body = { id: 1, code: 'ABCD' };
+    if (p === '/api/v2/user') body = { id: 1, uuid: 'admin-uuid', title: 'Dan', home: true, homeAdmin: true };
+    else if (p === '/api/v2/home/users') body = HOME_USERS;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
@@ -344,6 +357,60 @@ test('after watching an episode, the show page focuses that episode', async () =
   // Back on the show: episode 3 is still focused, not the first unwatched.
   await key('play', 800);
   assert.match(await lastOpen(), /parts\/33\//);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('VOD categories by profile: the admin limits a child to suitable categories', async () => {
+  // As the admin (role learnt from plex.tv): pick Drama only for Ella.
+  let { ctx, page, errors, key, list, text } = await newPage({ extra: XT_CONFIG });
+  await key('up');
+  for (let i = 0; i < 7; i++) await key('right');
+  await key('enter', 800);
+  for (let i = 0; i < 4; i++) await key('down');
+  await key('enter', 600);
+  assert.deepEqual((await list('.vod-setup .setting-label')).slice(3), ['Test and save', 'Categories for each profile…', 'Remove VOD from EasyPlex']);
+  await key('down'); await key('down'); await key('down'); await key('down');
+  await key('enter', 800);
+  assert.deepEqual(await list('.screen:not(.hidden) .vod-prow .setting-label'), ['Dan  (admin)', 'Ella  · managed']);
+  assert.deepEqual(await list('.screen:not(.hidden) .vod-prow .setting-value'), ['All categories', 'All categories']);
+  await key('down'); await key('enter', 400);
+  assert.deepEqual(await list('.screen:not(.hidden) .vod-prow .setting-label'), ['Limit categories', 'Tick every category', 'Untick every category', 'Action', 'Drama']);
+  for (let i = 0; i < 4; i++) await key('down');
+  await key('enter');
+  assert.deepEqual(await list('.screen:not(.hidden) .vod-prow .setting-value'), ['On', '', '', 'Hidden', '✓ Allowed']);
+  assert.match(await text('.screen:not(.hidden) .vod-plist-status'), /1 of 2 categories allowed/);
+  const limits = JSON.parse(await page.evaluate(() => localStorage.getItem('ss.xtreamLimits')));
+  assert.deepEqual(limits, { 'kid-uuid': { title: 'Ella', allow: ['2'] } });
+  await key('back', 400);
+  assert.deepEqual(await list('.screen:not(.hidden) .vod-prow .setting-value'), ['All categories', '1 of 2 categories']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+
+  // As Ella: only Drama, no VOD settings.
+  const asElla = `localStorage.setItem('ss.user', JSON.stringify({ title: 'Ella', uuid: 'kid-uuid', admin: false }));` +
+    `localStorage.setItem('ss.xtreamLimits', ${JSON.stringify(JSON.stringify(limits))});`;
+  ({ ctx, page, errors, key, list, text } = await newPage({ extra: XT_CONFIG + asElla }));
+  const nav = () => page.evaluate(() => [...document.querySelectorAll('.home .nav-item')].map(n => n.textContent));
+  assert.ok((await nav()).includes('VOD'));
+  await key('up');
+  for (let i = 0; i < 3; i++) await key('right');
+  await key('enter', 1000);
+  assert.deepEqual(await list('.vod-cat'), ['Drama']);
+  assert.match(await text('.lib-count'), /1 film\s+·\s+Drama/);
+  await key('menu');
+  assert.ok(!(await list('.ep-options .hx-menu-item')).some(l => /settings/i.test(l)));
+  await key('back'); await key('back', 400);
+  await key('right'); await key('right'); await key('enter', 600);
+  const values = await list('.setting-value');
+  assert.ok(values.includes('Managed by the Plex admin'));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+
+  // With every category unticked, Ella has no VOD item at all.
+  const none = `localStorage.setItem('ss.xtreamLimits', JSON.stringify({ 'kid-uuid': { title: 'Ella', allow: [] } }));`;
+  ({ ctx, page, errors } = await newPage({ extra: XT_CONFIG + asElla + none }));
+  assert.ok(!(await page.evaluate(() => [...document.querySelectorAll('.home .nav-item')].map(n => n.textContent))).includes('VOD'));
   assert.deepEqual(errors, []);
   await ctx.close();
 });
