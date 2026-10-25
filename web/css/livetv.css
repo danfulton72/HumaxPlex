@@ -1,12 +1,16 @@
-/* Live TV guide (timeline with info panel). Appended to css/app.css by apply.py. */
+/* Live TV guide (timeline with info panel) and recordings screen. */
 .ep-grid-active .settings-title,
 .ep-grid-active .ep-live-status,
-.ep-grid-active .ep-live-list { display: none !important; }
+.ep-grid-active .ep-live-list,
+.ep-sched-active .settings-title,
+.ep-sched-active .ep-live-status,
+.ep-sched-active .ep-live-list,
+.ep-sched-active .ep-live-detail { display: none !important; }
 
-.hx-grid { display: none; position: absolute; inset: 0; z-index: 5; box-sizing: border-box;
+.hx-grid, .hx-sched { display: none; position: absolute; inset: 0; z-index: 5; box-sizing: border-box;
   padding: 44px 80px 36px; background: #0B0D12; color: #FFF7E6; font-family: var(--body);
   flex-direction: column; gap: 20px; overflow: hidden; }
-.ep-grid-active .hx-grid { display: flex; }
+.ep-grid-active .hx-grid, .ep-sched-active .hx-sched { display: flex; }
 
 .hx-top { display: flex; justify-content: space-between; align-items: baseline; flex: none; }
 .hx-title { font: 700 46px/1 var(--display); letter-spacing: .5px; }
@@ -99,3 +103,10 @@
 .hx-menu { width: 620px; }
 .hx-menu-list { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 6px; }
 .hx-menu-item { font-size: 26px; padding: 16px 26px; }
+
+/* Recordings screen rows: when (day + time) on the left, programme on the right. */
+.hx-sched-count { width: auto; flex: 1; justify-content: flex-start; padding-left: 12px; }
+.hx-when { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
+.hx-when-day { font-size: 16px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; opacity: .7; }
+.hx-when-time { font: 700 26px var(--display); white-space: nowrap; }
+.hx-sched-prog { position: static; flex: 1; min-width: 0; justify-content: center; }
