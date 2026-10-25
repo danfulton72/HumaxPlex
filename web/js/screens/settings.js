@@ -5,11 +5,14 @@ import { h, toggleClass } from '../util/dom.js';
 import { session, signOut, useServer, activateHomeUser } from '../session.js';
 import { getServers, connect } from '../plex/auth.js';
 import { request, identity } from '../plex/client.js';
-import { setHud, hudEnabled } from '../ui/hud.js';
 import * as router from '../router.js';
 import { ServerPicker } from './login.js';
 import { error } from '../util/log.js';
-import { useAmbience, setLegacyGradients, legacyGradients } from '../ui/backdrop.js';
+import { useAmbience } from '../ui/backdrop.js';
+import * as store from '../util/store.js';
+import { showOptions } from '../ui/options.js';
+
+const START_LABELS = { home: 'Home', guide: 'Live TV guide', channel: 'Live TV: last channel' };
 
 export function SettingsScreen() {
   const el = h('div', 'screen settings');
@@ -93,9 +96,7 @@ export function SettingsScreen() {
       { label: 'Server', value: session.server ? session.server.name : '—', run: switchServer },
       { label: 'Plex user', value: session.user ? session.user.title : '—', run: switchUser, action: 'Switch user' },
       { label: 'Unlink Plex account', value: 'Sign out', run: doSignOut },
-      { label: 'Performance overlay', value: hudEnabled() ? 'On' : 'Off', run: () => { setHud(!hudEnabled()); build(); } },
-      // For before/after recordings: brings back the full-screen gradients that took ~2s per repaint.
-      { label: 'Demo: original slow renderer', value: legacyGradients() ? 'On' : 'Off', run: () => { setLegacyGradients(!legacyGradients()); build(); } },
+      { label: 'Start screen', value: START_LABELS[store.get('startScreen', 'home')] || 'Home', run: chooseStart },
     ];
     items.forEach(it => {
       it.el = h('div', 'setting', list);
@@ -103,6 +104,16 @@ export function SettingsScreen() {
       h('span', 'setting-value', it.el).textContent = it.value + (it.action ? '  ·  ' + it.action : '');
     });
     render();
+  }
+
+  function chooseStart() {
+    const cur = store.get('startScreen', 'home');
+    showOptions({
+      title: 'Start screen', subtitle: 'What EasyPlex opens on',
+      items: Object.keys(START_LABELS).map(k => ({
+        label: START_LABELS[k], checked: k === cur, run: () => { store.set('startScreen', k); build(); },
+      })),
+    });
   }
 
   function render() {

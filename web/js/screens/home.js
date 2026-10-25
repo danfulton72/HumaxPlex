@@ -9,7 +9,7 @@ import { isFast } from '../input.js';
 import * as store from '../util/store.js';
 import * as router from '../router.js';
 import * as icons from '../ui/icons.js';
-import { openItem, playItem, openLibrary, openSearch, openSettings } from '../nav.js';
+import { openItem, playItem, openLibrary, openSearch, openSettings, itemOptions } from '../nav.js';
 import { LiveTvScreen } from './livetv.js';
 import { error, log } from '../util/log.js';
 
@@ -247,6 +247,7 @@ export function HomeScreen() {
         if (action === 'down' && rows.length) { zone = 'rows'; renderNav(); renderRows(); return true; }
         if (action === 'enter') { activateNav(navItems[navIndex]); return true; }
         if (action === 'back') return false;
+        if (action === 'menu') return true;
         return true;
       }
       const row = rows[rowIndex];
@@ -266,6 +267,7 @@ export function HomeScreen() {
           return true;
         case 'enter': row.select(); return true;
         case 'play': case 'playpause': if (row.current()) playItem(row.current()); return true;
+        case 'menu': itemOptions(row.current(), { onChanged: load }); return true;
         case 'back':
           // Back from deep in the rows returns to the top first.
           if (rowIndex > 0 || row.index > 0) {

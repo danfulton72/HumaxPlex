@@ -7,7 +7,7 @@ import { metaLine, clock, episodeLabel } from '../util/format.js';
 import { clearLogo } from './home.js';
 import * as icons from '../ui/icons.js';
 import * as router from '../router.js';
-import { playItem } from '../nav.js';
+import { playItem, itemOptions } from '../nav.js';
 import { error } from '../util/log.js';
 
 const SHIFT = 400; // how far the body slides up to reveal seasons/episodes
@@ -220,6 +220,11 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
     onKey(action) {
       if (action === 'up') { moveZone(-1); return true; }
       if (action === 'down') { moveZone(1); return true; }
+      if (action === 'menu') {
+        if (zone === 'episodes' && episodes) itemOptions(episodes.row.current(), { onChanged: load });
+        else itemOptions(item, { onChanged: load, details: false });
+        return true;
+      }
       if (action === 'play' || action === 'playpause') {
         const t = zone === 'episodes' ? episodes.row.current() : target();
         if (t) playItem(t, { offset: t.viewOffset || 0 });
