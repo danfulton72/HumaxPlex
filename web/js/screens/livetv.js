@@ -195,7 +195,7 @@ export function LiveTvScreen() {
   function say(text) {
     setText(details, text);
     clearTimeout(sayTimer);
-    if (view === 'grid' && text) sayTimer = setTimeout(() => { if (details._text === String(text)) setText(details, ''); }, 7000);
+    if ((view === 'grid' || view === 'schedule') && text) sayTimer = setTimeout(() => { if (details._text === String(text)) setText(details, ''); }, 7000);
   }
   function isScheduled(m) {
     return !!m && ((m.guid && scheduledGuids.has(m.guid)) || (m.grandparentGuid && scheduledGuids.has(m.grandparentGuid)));
@@ -711,6 +711,7 @@ export function LiveTvScreen() {
     };
     key('Choose', 'hx-glyph', '▲▼');
     key('Page', 'hx-glyph', 'CH+ CH−');
+    key('Cancel recording', 'hx-key', 'OK');
     h('span', 'hx-sp', keys);
     key('Back to guide', 'hx-key', 'Back');
   }
@@ -767,10 +768,11 @@ export function LiveTvScreen() {
     if (md.year) h('span', '', sg.chips).textContent = String(md.year);
     if (Number.isFinite(e.start) && e.end > e.start) h('span', '', sg.chips).textContent = mins(e.end - e.start);
   }
-  async function showScheduled() {
+  async function showScheduled(keepIndex) {
+    const wasIndex = index;
     view = 'schedule';
     entries = []; index = 0; schedTop = 0; schedState = 'loading';
-    setText(details, '');
+    if (!keepIndex) setText(details, '');
     renderSchedule();
     try {
       const mc = await server.get('/media/subscriptions/scheduled');
@@ -793,6 +795,7 @@ export function LiveTvScreen() {
         };
       }).sort((x, y) => (Number.isFinite(x.start) ? x.start : Infinity) - (Number.isFinite(y.start) ? y.start : Infinity));
       schedState = 'ready';
+      if (keepIndex) index = Math.max(0, Math.min(wasIndex, entries.length - 1));
       renderSchedule();
     } catch (e) {
       if (view !== 'schedule') return;
@@ -800,6 +803,122 @@ export function LiveTvScreen() {
       renderSchedule();
     }
   }
+  // ---- cancelling a scheduled recording -------------------------------------
+  // A one-off rule (single episode or film) is removed outright. For a series
+  // rule the viewer chooses: skip just this airing (cancel the grab; Plex
+  // forgets this if the server restarts) or delete the whole series rule.
+  let cancel = null, cancelEl = null;
+  async function dvrDelete(path) {
+    const response = await fetch(server.url(path), {
+      method: 'DELETE',
+      headers: Object.assign({ Accept: 'application/json', 'X-Plex-Token': server.token }, identity()),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      const title = /<title>([^<]*)<\/title>/i.exec(body);
+      const text = (title ? title[1] : body.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+      throw new Error('Plex HTTP ' + response.status + (text ? ' ' + text.slice(0, 140) : ''));
+    }
+  }
+  async function openCancel() {
+    const e = entries[index];
+    if (!e || cancel) return;
+    const op = e.item || {};
+    const subId = op.mediaSubscriptionID;
+    const opId = op.id || (String(op.key || '').split('/').pop());
+    cancel = { e, opId, subId, idx: 0, busy: false, status: '', items: [] };
+    view = 'cancel';
+    renderCancel();
+    // Work out whether the rule covers more than this airing.
+    let subType = null, subTitle = '';
+    if (subId != null) {
+      try {
+        const mc = await server.get('/media/subscriptions/' + encodeURIComponent(subId));
+        const sub = (mc.MediaSubscription || [])[0] || {};
+        subType = sub.type != null ? Number(sub.type) : null;
+        subTitle = sub.title || '';
+      } catch (err) { /* fall back to counting airings */ }
+    }
+    if (!cancel || cancel.e !== e) return;
+    const siblings = entries.filter(x => x.item?.mediaSubscriptionID != null && x.item.mediaSubscriptionID === subId).length;
+    const series = subType != null ? (subType === 2 || subType === 3) : siblings > 1;
+    const items = [];
+    if (series) {
+      if (opId) items.push(['Skip this episode only', 'grab']);
+      if (subId != null) items.push(['Cancel series recording' + (siblings > 1 ? ' (' + siblings + ' scheduled)' : '') +
+        (subTitle ? ' · ' + subTitle : ''), 'sub']);
+    } else if (subId != null) items.push(['Cancel this recording', 'sub']);
+    else if (opId) items.push(['Cancel this recording', 'grab']);
+    items.push(['Keep recording', 'keep']);
+    cancel.items = items;
+    cancel.series = series;
+    renderCancel();
+  }
+  function renderCancel() {
+    if (!cancelEl) {
+      cancelEl = h('div', 'hx-dialog', el);
+      const box = h('div', 'hx-dlg hx-menu hx-cancel', cancelEl);
+      h('div', 'hx-dlg-eyebrow', box).textContent = 'CANCEL RECORDING';
+      cancelEl._title = h('h2', 'hx-dlg-title', box);
+      cancelEl._sub = h('div', 'hx-dlg-sub', box);
+      cancelEl._list = h('div', 'hx-menu-list', box);
+      cancelEl._status = h('div', 'hx-dlg-status', box);
+      h('div', 'hx-dlg-hint', box).textContent = '▲▼ choose · OK select · Back keep';
+    }
+    cancelEl.style.display = '';
+    const e = cancel.e;
+    cancelEl._title.textContent = e.title;
+    cancelEl._sub.textContent = [e.episode, Number.isFinite(e.start) ? dayLabel(e.start) + ' ' + hhmm(e.start) + ' – ' + hhmm(e.end) : '',
+      e.channel].filter(Boolean).join('  ·  ');
+    cancelEl._list.textContent = '';
+    if (!cancel.items.length) h('div', 'hx-dlg-sub', cancelEl._list).textContent = 'Checking recording rule…';
+    cancel.items.forEach(([label], i) => {
+      h('div', 'hx-btn hx-menu-item' + (i === cancel.idx ? ' focus' : ''), cancelEl._list).textContent = label;
+    });
+    cancelEl._status.textContent = cancel.status || '';
+  }
+  function closeCancel() {
+    if (cancelEl) cancelEl.style.display = 'none';
+    cancel = null;
+    view = 'schedule';
+    renderSchedule();
+  }
+  async function confirmCancel() {
+    const choice = cancel.items[cancel.idx];
+    if (!choice || cancel.busy) return;
+    const [, what] = choice;
+    if (what === 'keep') { closeCancel(); return; }
+    const { e, opId, subId } = cancel;
+    cancel.busy = true; cancel.status = 'Cancelling…'; renderCancel();
+    try {
+      if (what === 'grab') await dvrDelete('/media/grabbers/operations/' + encodeURIComponent(opId));
+      else await dvrDelete('/media/subscriptions/' + encodeURIComponent(subId));
+    } catch (err) {
+      if (!cancel) return;
+      cancel.busy = false; cancel.status = 'Not cancelled: ' + err.message; renderCancel();
+      return;
+    }
+    const md = e.md || {};
+    if (md.guid) scheduledGuids.delete(md.guid);
+    if (what === 'sub' && md.grandparentGuid) scheduledGuids.delete(md.grandparentGuid);
+    const wasSeries = cancel.series;
+    closeCancel();
+    say(what === 'grab' ? 'Skipped: ' + e.title + (e.episode ? ' · ' + e.episode : '') :
+      'Cancelled: ' + e.title + (wasSeries ? ' (series)' : ''));
+    loadScheduled();
+    showScheduled(true);
+  }
+  function cancelKey(action) {
+    if (!cancel) return true;
+    switch (action) {
+      case 'up': cancel.idx = Math.max(0, cancel.idx - 1); renderCancel(); return true;
+      case 'down': cancel.idx = Math.min(Math.max(0, cancel.items.length - 1), cancel.idx + 1); renderCancel(); return true;
+      case 'enter': case 'red': case 'record': confirmCancel(); return true;
+      case 'back': case 'menu': if (!cancel.busy) closeCancel(); return true;
+      default: return true;
+    }
+  }
+
   async function dvrPost(path, params = {}, rawQuery = '') {
     const url = server.url(path, params) + (rawQuery ? '&' + rawQuery : '');
     const response = await fetch(url, {
@@ -1427,10 +1546,12 @@ export function LiveTvScreen() {
           case 'down': index = Math.max(0, Math.min(entries.length - 1, index + 1)); renderSchedule(); return true;
           case 'pageup': index = Math.max(0, index - ROWS); schedTop = index; renderSchedule(); return true;
           case 'pagedown': index = Math.max(0, Math.min(entries.length - 1, index + ROWS)); schedTop = index; renderSchedule(); return true;
+          case 'enter': case 'red': case 'record': case 'menu': openCancel(); return true;
           case 'back': case 'left': case 'blue': showGrid(); return true;
           default: return true;
         }
       }
+      if (view === 'cancel') return cancelKey(action);
       if (view === 'empty' && action === 'green') { debugPage = 0; returnView = 'grid'; showDebug(); return true; }
       return false;
     },
