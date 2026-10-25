@@ -4,8 +4,7 @@
 .ep-grid-active .ep-live-list,
 .ep-sched-active .settings-title,
 .ep-sched-active .ep-live-status,
-.ep-sched-active .ep-live-list,
-.ep-sched-active .ep-live-detail { display: none !important; }
+.ep-sched-active .ep-live-list { display: none !important; }
 
 .hx-grid, .hx-sched { display: none; position: absolute; inset: 0; z-index: 5; box-sizing: border-box;
   padding: 44px 80px 36px; background: #0B0D12; color: #FFF7E6; font-family: var(--body);
@@ -22,7 +21,7 @@
 .hx-info-main { width: 760px; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
 .hx-info-ch { font-size: 20px; font-weight: 600; color: rgba(255,247,230,.72); }
 .hx-info-ch b { font: 700 26px var(--display); color: var(--coral); margin-right: 12px; }
-.hx-info-title { margin: 0; padding-bottom: 2px; font: 700 54px/1.12 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hx-info-title { margin: 0; padding-bottom: 2px; font: 700 48px/1.1 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hx-info-sub { font-size: 20px; color: rgba(255,247,230,.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hx-info-sub:empty { display: none; }
 .hx-info-meta { display: flex; gap: 18px; align-items: center; font-size: 20px; color: rgba(255,247,230,.72); }
@@ -69,10 +68,10 @@
 .hx-dot { width: 16px; height: 16px; border-radius: 8px; }
 
 /* Messages (tuning, recording) float above the guide and clear themselves. */
-.ep-grid-active .ep-live-detail { position: absolute; z-index: 6; left: 50%; right: auto; bottom: 96px;
+.ep-grid-active .ep-live-detail, .ep-sched-active .ep-live-detail { position: absolute; z-index: 6; left: 50%; right: auto; bottom: 96px;
   transform: translateX(-50%); max-width: 1200px; max-height: none; padding: 16px 28px; border-radius: 14px;
   background: #2B3142; color: #FFF7E6; font-size: 22px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
-.ep-grid-active .ep-live-detail:empty { display: none; }
+.ep-grid-active .ep-live-detail:empty, .ep-sched-active .ep-live-detail:empty { display: none; }
 
 /* Record dialog: what to record and which library/folder to save it in. */
 .hx-dialog { position: absolute; inset: 0; z-index: 20; background: rgba(5,7,10,.74);
@@ -110,3 +109,4 @@
 .hx-when-day { font-size: 16px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; opacity: .7; }
 .hx-when-time { font: 700 26px var(--display); white-space: nowrap; }
 .hx-sched-prog { position: static; flex: 1; min-width: 0; justify-content: center; }
+.hx-cancel { width: 860px; }

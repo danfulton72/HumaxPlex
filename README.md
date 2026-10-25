@@ -95,6 +95,7 @@ Google TV remotes) can **hold OK** for an options list with the same actions.
 | Guide | Record / Red | Record: choose episode or series and the library to save into |
 | Guide | FF / RW | Forward / back one day |
 | Guide | Green · Yellow · Blue | Diagnostics · channel day guide · recordings |
+| Recordings | OK / Red | Cancel: one-off recording, skip one episode, or cancel a series |
 | Watching | Up / CH+, Down / CH− | Next / previous channel |
 | Watching | Left / Last | Previous channel |
 | Watching | OK / Info | Now & next banner |
