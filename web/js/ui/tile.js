@@ -4,6 +4,7 @@ import { h, setText, show, setTransform, toggleClass } from '../util/dom.js';
 import { load } from './images.js';
 import { session } from '../session.js';
 import { progress, episodeLabel } from '../util/format.js';
+import { imageUrl } from '../xtream/api.js';
 
 export const KINDS = {
   poster: { w: 220, h: 330 },
@@ -72,9 +73,10 @@ export function fillTile(tile, item) {
   }
   const kind = tile.kind;
   const server = session.server;
-  const path = artFor(item, kind);
+  // Xtream films carry an absolute poster URL; Plex items a server path.
+  if (item.posterUrl !== undefined) load(tile.img, imageUrl(item.posterUrl));
   // The web layer is 1920x1080, so tile size is exactly the pixels we need.
-  load(tile.img, server ? server.image(path, tile.size.w, tile.size.h) : '');
+  else load(tile.img, server ? server.image(artFor(item, kind), tile.size.w, tile.size.h) : '');
   setText(tile.ph, titleFor(item, kind));
 
   const p = progress(item);
