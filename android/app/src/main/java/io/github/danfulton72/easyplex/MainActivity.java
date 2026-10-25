@@ -30,6 +30,7 @@ import androidx.media3.ui.PlayerView;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -472,6 +473,25 @@ public final class MainActivity extends Activity {
                 vodTitle = title; vodLine = line; vodProgress = progress; vodSticky = sticky;
                 if (show) showPlaybackHud();
                 updatePlaybackHud();
+            });
+        }
+        // Text fields: remote keys are handled here and passed to the page as
+        // actions, so focusing an <input> from script never counts as the user
+        // selecting it and Android won't raise the keyboard by itself.
+        @JavascriptInterface public void showKeyboard() {
+            runOnUiThread(() -> {
+                if (web == null) return;
+                web.requestFocus();
+                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm == null) return;
+                if (!imm.showSoftInput(web, InputMethodManager.SHOW_IMPLICIT))
+                    imm.showSoftInput(web, InputMethodManager.SHOW_FORCED);
+            });
+        }
+        @JavascriptInterface public void hideKeyboard() {
+            runOnUiThread(() -> {
+                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null && web != null) imm.hideSoftInputFromWindow(web.getWindowToken(), 0);
             });
         }
         @JavascriptInterface public void hideHud() {

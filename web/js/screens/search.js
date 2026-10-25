@@ -7,6 +7,7 @@ import { openItem, playItem, itemOptions } from '../nav.js';
 import { error } from '../util/log.js';
 import * as icons from '../ui/icons.js';
 import { useAmbience } from '../ui/backdrop.js';
+import { showKeyboard, hideKeyboard } from '../platform/device.js';
 
 const IME_DONE = 65376;
 const IME_CANCEL = 65385;
@@ -82,11 +83,11 @@ export function SearchScreen() {
   });
   input.addEventListener('keydown', e => {
     if (e.keyCode === IME_DONE || e.keyCode === 13) {
-      input.blur();
+      hideKeyboard(input);
       run(input.value.trim());
       if (rows.length) { rowIndex = 0; render(); }
     } else if (e.keyCode === IME_CANCEL) {
-      input.blur();
+      hideKeyboard(input);
     }
   });
 
@@ -97,12 +98,12 @@ export function SearchScreen() {
       ambience.restore();
       if (rowIndex < 0) setTimeout(focusInput, 50);
     },
-    onHide() { input.blur(); },
+    onHide() { hideKeyboard(input); },
     onKey(action) {
       if (rowIndex < 0) {
-        if (action === 'down' && rows.length) { input.blur(); rowIndex = 0; render(); return true; }
-        if (action === 'enter') { input.focus(); return true; }
-        if (action === 'back') { input.blur(); return false; }
+        if (action === 'down' && rows.length) { hideKeyboard(input); rowIndex = 0; render(); return true; }
+        if (action === 'enter') { showKeyboard(input); return true; }
+        if (action === 'back') { hideKeyboard(input); return false; }
         return true;
       }
       const row = rows[rowIndex];
