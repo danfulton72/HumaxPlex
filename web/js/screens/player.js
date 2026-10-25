@@ -15,10 +15,14 @@ import { request } from '../plex/client.js';
 import { parseSubtitles, CueTrack } from '../player/subtitles.js';
 
 // What Android TV boxes reliably decode natively with Media3. No DTS.
+// av1 + opus are the newer YouTube-era codecs; recent boxes (Android 9+/Media3)
+// decode them in hardware. Direct-playing them avoids the Plex HLS transcode,
+// which also fixes position drift on those streams. If a box can't decode one,
+// playback falls back to HLS automatically (see the direct-play failure path).
 const DIRECT = {
   container: { mp4: 1, m4v: 1, mkv: 1 },
-  video: { h264: 1, hevc: 1 },
-  audio: { aac: 1, ac3: 1, eac3: 1, mp3: 1 },
+  video: { h264: 1, hevc: 1, av1: 1 },
+  audio: { aac: 1, ac3: 1, eac3: 1, mp3: 1, opus: 1 },
 };
 const TEXT_SUBS = { srt: 1, subrip: 1, ass: 1, ssa: 1, mov_text: 1, vtt: 1, webvtt: 1, smi: 1 };
 
@@ -127,7 +131,12 @@ export function PlayerScreen(initial, { offset = null } = {}) {
   const player = createPlayer(stage, {
     onTime(ms) {
       if (!started) return;
-      position = base + ms;
+      let pos = base + ms;
+      // Plex HLS segment timestamps can drift ahead of real time (notably on
+      // transcodes), so the player may report a position past the end. Clamp it
+      // to the known length so the HUD never shows "33 min of 22 min".
+      if (duration > 0 && pos > duration) pos = duration;
+      position = pos;
       if (seekTarget == null) renderProgress(position);
     },
     onBuffering(on) { toggleClass(spinner, 'on', on); },
