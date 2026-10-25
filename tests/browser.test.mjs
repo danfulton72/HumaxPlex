@@ -55,6 +55,22 @@ const MOVIE = {
     Stream: [{ streamType: 2, codec: 'aac', id: 1, selected: true }] }] }],
 };
 
+// A show with one season of three episodes; the first is watched.
+const episode = (n, watched) => ({
+  ratingKey: String(300 + n), key: '/library/metadata/' + (300 + n), type: 'episode', title: 'Episode ' + n,
+  index: n, parentIndex: 1, parentRatingKey: '300', grandparentRatingKey: '200', grandparentTitle: 'Road Trips',
+  duration: 1320000, viewCount: watched ? 1 : 0,
+  Media: [{ container: 'mp4', videoCodec: 'h264', Part: [{ id: 30 + n, key: '/library/parts/' + (30 + n) + '/ep.mp4',
+    Stream: [{ streamType: 2, codec: 'aac', id: 1, selected: true }] }] }],
+});
+const EPISODES = [episode(1, true), episode(2, false), episode(3, false)];
+const SHOW = {
+  '/library/metadata/200': [{ ratingKey: '200', type: 'show', title: 'Road Trips', leafCount: 3, viewedLeafCount: 1 }],
+  '/library/metadata/200/children': [{ ratingKey: '300', type: 'season', title: 'Season 1', index: 1, parentRatingKey: '200' }],
+  '/library/metadata/300/children': EPISODES,
+  ...Object.fromEntries(EPISODES.map(e => ['/library/metadata/' + e.ratingKey, [e]])),
+};
+
 // A Dispatcharr Xtream output with two categories.
 const XT_CATS = [{ category_id: '1', category_name: 'Action', parent_id: 0 }, { category_id: '2', category_name: 'Drama', parent_id: 0 }];
 const XT_FILMS = [
@@ -82,6 +98,7 @@ async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true
     else if (p === '/hubs') body = { MediaContainer: { Hub: [{ hubIdentifier: 'movie.recent', title: 'Recently Added', type: 'movie', size: 1, Metadata: [MOVIE] }] } };
     else if (p === '/library/sections/1/all') body = { MediaContainer: { totalSize: 1, size: 1, Metadata: [MOVIE] } };
     else if (p === '/library/sections/1/firstCharacter') body = { MediaContainer: { Directory: [{ title: 'T', size: 1 }] } };
+    else if (SHOW[p]) body = { MediaContainer: { Metadata: SHOW[p] } };
     else if (p.startsWith('/library/metadata/')) body = { MediaContainer: { Metadata: [MOVIE] } };
     else if (p.endsWith('/decision')) body = { MediaContainer: { generalDecisionCode: 1000 } };
     else if (p === '/livetv/dvrs') body = { MediaContainer: { Dvr: [{ key: '1', Device: [{ uri: 'http://xtream.test/hdhr' }] }] } };
@@ -303,6 +320,30 @@ test('Dispatcharr VOD: set up in Settings, browse, details, play, resume', async
   await key('enter', 500);
   assert.equal((await calls()).open.at(-1), 'http://xtream.test/movie/dan/pw/11.mkv');
 
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('after watching an episode, the show page focuses that episode', async () => {
+  const { ctx, page, errors, key } = await newPage();
+  const lastOpen = () => page.evaluate(() => window.__calls.open.at(-1) || '');
+  await page.evaluate(() => import('./js/nav.js').then(m => m.openItem({ ratingKey: '200', type: 'show', title: 'Road Trips' })));
+  await page.waitForTimeout(800);
+
+  // Lands on the first unwatched episode (2); play episode 3 instead.
+  await key('down');
+  await key('play', 800);
+  assert.match(await lastOpen(), /parts\/32\//);
+  await key('back'); await key('back', 1000);
+  await key('right'); await key('enter', 800);
+  assert.match(await lastOpen(), /parts\/33\//);
+  await page.evaluate(() => window.__easyplexVideoEvent('ready'));
+  await page.waitForTimeout(300);
+  await key('back'); await key('back', 1000);
+
+  // Back on the show: episode 3 is still focused, not the first unwatched.
+  await key('play', 800);
+  assert.match(await lastOpen(), /parts\/33\//);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
