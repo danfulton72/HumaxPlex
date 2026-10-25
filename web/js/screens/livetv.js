@@ -689,11 +689,19 @@ export function LiveTvScreen() {
     try {
       const mc = await server.get('/media/subscriptions/scheduled');
       if (view !== 'schedule') return;
-      entries = (mc.Metadata || mc.MediaSubscription || mc.Directory || []).map(m => ({
-        channel: m.channelTitle || 'Scheduled',
-        title: m.title || m.grandparentTitle || 'Recording',
-        subtitle: m.summary || m.title || '', item: m,
-      }));
+      // Plex returns MediaContainer.MediaGrabOperation[] — one op per recording.
+      // Pending ones carry a nested .Metadata (title/type/channelTitle); already
+      // recorded ones carry .Video and status "complete". Show the pending list.
+      const ops = (mc.MediaGrabOperation || []).filter(o => o && o.status === 'scheduled');
+      entries = ops.map(o => {
+        const md = o.Metadata || {};
+        const media = (md.Media || [])[0] || {};
+        return {
+          channel: media.channelTitle || md.channelTitle || 'Scheduled',
+          title: md.title || md.grandparentTitle || 'Recording',
+          subtitle: md.summary || md.title || '', item: o,
+        };
+      });
       index = 0; render();
       if (!entries.length) setText(details, 'No scheduled recordings.');
     } catch (e) { setText(details, 'Unable to load recordings: ' + e.message); }
