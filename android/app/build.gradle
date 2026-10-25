@@ -30,6 +30,8 @@ android {
             signingConfig signingConfigs.persistent
         }
     }
+    // The web UI lives in /web at the repository root and is packaged as-is.
+    sourceSets { main { assets.srcDirs = ['../../web'] } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 dependencies {

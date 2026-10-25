@@ -1,0 +1,11 @@
+// Inline SVG icons (stroke/fill use currentColor).
+export const play = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>';
+export const pause = '<svg viewBox="0 0 24 24"><rect fill="currentColor" x="5" y="4" width="5" height="16" rx="1.2"/><rect fill="currentColor" x="14" y="4" width="5" height="16" rx="1.2"/></svg>';
+export const restart = '<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5"/></svg>';
+export const check = '<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+export const uncheck = '<svg viewBox="0 0 24 24"><circle fill="none" stroke="currentColor" stroke-width="2.4" cx="12" cy="12" r="8"/></svg>';
+export const tv = '<svg viewBox="0 0 24 24"><rect fill="none" stroke="currentColor" stroke-width="2.2" x="3" y="6" width="18" height="13" rx="2.5"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M8.5 2.5L12 6l3.5-3.5"/></svg>';
+export const search = '<svg viewBox="0 0 24 24"><circle fill="none" stroke="currentColor" stroke-width="2.6" cx="10.5" cy="10.5" r="6.5"/><path stroke="currentColor" stroke-width="2.6" stroke-linecap="round" d="M15.5 15.5L20 20"/></svg>';
+export const gear = '<svg viewBox="0 0 24 24"><circle fill="none" stroke="currentColor" stroke-width="2.4" cx="12" cy="12" r="3.2"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" d="M12 2.8l1.6 2.4 2.8-.7.7 2.8 2.4 1.6-1.2 2.6 1.2 2.6-2.4 1.6-.7 2.8-2.8-.7L12 21.2l-1.6-2.4-2.8.7-.7-2.8-2.4-1.6L5.7 12 4.5 9.4l2.4-1.6.7-2.8 2.8.7z"/></svg>';
+export const subtitles = '<svg viewBox="0 0 24 24"><rect fill="none" stroke="currentColor" stroke-width="2.2" x="2.5" y="5" width="19" height="14" rx="2.5"/><path stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M6.5 15h4M13 15h4.5M6.5 11.5h7M15.5 11.5h2"/></svg>';
+export const audio = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
