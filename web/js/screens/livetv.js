@@ -1,4 +1,4 @@
-// HumaxPlex Live TV & DVR screen.
+// EasyPlex Live TV & DVR screen.
 // Copied verbatim into the web app by patches/apply.py (js/screens/livetv.js).
 //
 // Channels and EPG come from the Plex DVR; playback goes straight to the
@@ -8,6 +8,7 @@
 // Remote keys
 //   Guide grid : arrows move · OK/Play watch · Record/Red record · FF/RW ±1 day
 //                Blue recordings · Yellow channel day guide · Green diagnostics
+//                Hold OK (or Menu) for an options list, for remotes without those keys
 //   Watching   : Up/CH+ next channel · Down/CH− previous · Left/Last previous
 //                channel · OK/Info now & next · Right audio/subtitles · Back guide
 import { h, setText } from '../util/dom.js';
@@ -94,12 +95,12 @@ function rangeOf(m) { const b = airingBounds(m); return hhmm(b.start) + '–' + 
 // ---- screen -----------------------------------------------------------------
 
 export function LiveTvScreen() {
-  const el = h('div', 'screen settings humax-live');
+  const el = h('div', 'screen settings ep-live');
   const ambience = useAmbience();
   h('h1', 'settings-title', el).textContent = 'Live TV & DVR';
-  const info = h('div', 'humax-live-status', el);
-  const list = h('div', 'humax-live-list', el);
-  const details = h('div', 'humax-live-detail', el);
+  const info = h('div', 'ep-live-status', el);
+  const list = h('div', 'ep-live-list', el);
+  const details = h('div', 'ep-live-detail', el);
   const server = session.server;
   const guideCache = sharedGuideCache;
 
@@ -284,6 +285,7 @@ export function LiveTvScreen() {
     key('Channels', 'hx-glyph', '▲▼');
     key('Programmes', 'hx-glyph', '◀▶');
     key('Day', 'hx-glyph', 'FF RW');
+    key('More', 'hx-key', 'Hold OK');
     h('span', 'hx-sp', keys);
     key('Diagnostics', 'hx-dot', '#2FA84F');
     key('Day guide', 'hx-dot', '#F2C230');
@@ -327,7 +329,7 @@ export function LiveTvScreen() {
 
   function renderGrid() {
     if (!gridEl) buildGrid();
-    el.classList.add('humax-grid-active');
+    el.classList.add('ep-grid-active');
     const now = Date.now();
     g.clock.textContent = new Date(now).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ';
     h('b', '', g.clock).textContent = hhmm(now);
@@ -466,11 +468,11 @@ export function LiveTvScreen() {
   }
   function overlay(title) {
     if (!diagnostic) {
-      diagnostic = h('div', 'humax-live-debug', el);
-      h('div', 'humax-debug-title', diagnostic);
-      h('pre', 'humax-debug-content', diagnostic);
+      diagnostic = h('div', 'ep-live-debug', el);
+      h('div', 'ep-debug-title', diagnostic);
+      h('pre', 'ep-debug-content', diagnostic);
     }
-    diagnostic.querySelector('.humax-debug-title').textContent = title;
+    diagnostic.querySelector('.ep-debug-title').textContent = title;
     diagnostic.style.display = '';
     return diagnostic.querySelector('pre');
   }
@@ -525,12 +527,12 @@ export function LiveTvScreen() {
     if (node) node.scrollIntoView({ block: 'nearest' });
   }
   function render() {
-    el.classList.remove('humax-grid-active');
+    el.classList.remove('ep-grid-active');
     list.innerHTML = '';
     entries.forEach(e => {
-      const row = h('div', 'humax-live-row', list);
-      h('span', 'humax-live-channel', row).textContent = e.channel;
-      h('span', 'humax-live-show', row).textContent = e.title;
+      const row = h('div', 'ep-live-row', list);
+      h('span', 'ep-live-channel', row).textContent = e.channel;
+      h('span', 'ep-live-show', row).textContent = e.title;
     });
     focus();
   }
@@ -538,7 +540,7 @@ export function LiveTvScreen() {
   // ---- loading channels -------------------------------------------------------
 
   async function load() {
-    el.classList.remove('humax-grid-active');
+    el.classList.remove('ep-grid-active');
     list.innerHTML = '';
     setText(info, 'Checking Plex DVR and programme guide…');
     try {
@@ -650,7 +652,7 @@ export function LiveTvScreen() {
     view = 'guide';
     dayOffset = Math.max(0, Math.min(7, delta));
     const date = localDate(Date.now() + dayOffset * DAY);
-    el.classList.remove('humax-grid-active');
+    el.classList.remove('ep-grid-active');
     setText(info, 'Guide: ' + guideChannel.channel + ' · ' + date +
       ' · Left/Right: day · OK: record · Play: watch · Back: guide grid');
     setText(details, 'Loading channel schedule…');
@@ -678,7 +680,7 @@ export function LiveTvScreen() {
 
   async function showScheduled() {
     view = 'schedule';
-    el.classList.remove('humax-grid-active');
+    el.classList.remove('ep-grid-active');
     entries = []; index = 0; render();
     setText(info, 'DVR recording schedule · Back: guide grid');
     setText(details, 'Loading recordings…');
@@ -714,7 +716,7 @@ export function LiveTvScreen() {
   // (this airing, all episodes, …) and each choice must be saved into a library
   // of the right kind (movie or TV) and one of its folders.
   let dlg = null, dlgEl = null, d = {}, lastTemplate = null;
-  const REC_PREF = 'humaxRecordLibrary:';
+  const REC_PREF = 'easyplexRecordLibrary:';
   function prefGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function prefSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function libraryKind(opt) { return Number(opt?.type) === 1 ? 'movie' : 'show'; }
@@ -873,6 +875,61 @@ export function LiveTvScreen() {
       renderDialog();
     }
   }
+  // Options list (hold OK / Menu): everything the colour and record keys do.
+  let menu = null, menuEl = null;
+  function openMenu() {
+    const from = view;
+    const items = [];
+    if (from === 'grid') {
+      items.push(['Watch channel', () => tuneSelected()]);
+      if (selectedGrid()?.programme) items.push(['Record…', () => recordSelected()]);
+      items.push(['Recordings', () => showScheduled()]);
+      items.push(['Channel day guide', () => openChannelGuide()]);
+    } else if (from === 'guide') {
+      if (entries[index]?.item) items.push(['Record…', () => recordSelected()]);
+      items.push(['Watch channel', () => tuneSelected()]);
+      items.push(['Back to guide', () => showGrid()]);
+    } else return;
+    items.push(['Diagnostics', () => { debugPage = 0; showDebug(); }]);
+    menu = { items, idx: 0, returnTo: from };
+    view = 'menu';
+    if (!menuEl) {
+      menuEl = h('div', 'hx-dialog', el);
+      const box = h('div', 'hx-dlg hx-menu', menuEl);
+      h('div', 'hx-dlg-eyebrow', box).textContent = 'OPTIONS';
+      menuEl._list = h('div', 'hx-menu-list', box);
+      h('div', 'hx-dlg-hint', box).textContent = '▲▼ choose · OK select · Back close';
+    }
+    renderMenu();
+  }
+  function renderMenu() {
+    menuEl.style.display = '';
+    menuEl._list.textContent = '';
+    menu.items.forEach(([label], i) => {
+      h('div', 'hx-btn hx-menu-item' + (i === menu.idx ? ' focus' : ''), menuEl._list).textContent = label;
+    });
+  }
+  function closeMenu() {
+    if (menuEl) menuEl.style.display = 'none';
+    const back = menu?.returnTo || 'grid';
+    menu = null;
+    return back;
+  }
+  function menuKey(action) {
+    switch (action) {
+      case 'up': menu.idx = Math.max(0, menu.idx - 1); renderMenu(); return true;
+      case 'down': menu.idx = Math.min(menu.items.length - 1, menu.idx + 1); renderMenu(); return true;
+      case 'enter': {
+        const run = menu.items[menu.idx][1];
+        view = closeMenu();
+        run();
+        return true;
+      }
+      case 'back': case 'menu': view = closeMenu(); return true;
+      default: return true;
+    }
+  }
+
   function dialogKey(action) {
     switch (action) {
       case 'up': dlg.focus = Math.max(0, dlg.focus - 1); renderDialog(); return true;
@@ -892,7 +949,7 @@ export function LiveTvScreen() {
 
   // ---- playback -----------------------------------------------------------------
 
-  const native = () => (typeof HumaxVideo !== 'undefined' ? HumaxVideo : null);
+  const native = () => (typeof EasyPlexVideo !== 'undefined' ? EasyPlexVideo : null);
 
   // Native now/next banner over the video (the WebView is hidden while playing).
   function banner(row, extra) {
@@ -931,8 +988,8 @@ export function LiveTvScreen() {
     if (!native()?.loadHdhrLineup) throw new Error('Native HDHomeRun lookup unavailable');
     if (hdhrPending) return hdhrPending;
     hdhrPending = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { window.__humaxHdhrLineup = null; reject(new Error('HDHR lineup timed out')); }, 16000);
-      window.__humaxHdhrLineup = raw => {
+      const timeout = setTimeout(() => { window.__easyplexHdhrLineup = null; reject(new Error('HDHR lineup timed out')); }, 16000);
+      window.__easyplexHdhrLineup = raw => {
         clearTimeout(timeout);
         try {
           const rows = JSON.parse(raw);
@@ -940,7 +997,7 @@ export function LiveTvScreen() {
           hdhrLineup = rows;
           resolve(rows);
         } catch (err) { reject(err); }
-        finally { window.__humaxHdhrLineup = null; }
+        finally { window.__easyplexHdhrLineup = null; }
       };
       native().loadHdhrLineup(uri);
     });
@@ -949,7 +1006,7 @@ export function LiveTvScreen() {
   function startPlayback(url, row) {
     const v = native();
     if (!v) throw new Error('Native player unavailable');
-    window.__humaxLivePlayError = (msg) => {
+    window.__easyplexLivePlayError = (msg) => {
       if (view !== 'playing') return;
       const stalled = String(msg).indexOf('NATIVE_STALL') !== -1;
       const text = stalled ? 'No video after 8s — this channel may not decode on this box.' : 'Playback failed: ' + msg;
@@ -1026,7 +1083,7 @@ export function LiveTvScreen() {
       if (view !== 'playing') showTuneReport(liveShape(data), 'Plex tuning response (no session UUID) · Back to return');
       throw new Error('Tune response had no live session');
     }
-    const playbackSession = 'humax-live-' + Date.now();
+    const playbackSession = 'ep-live-' + Date.now();
     const playUrl = server.url('/video/:/transcode/universal/start.m3u8', {
       path: '/livetv/sessions/' + uuid, session: playbackSession,
       hasMDE: 1, mediaBufferSize: 102400,
@@ -1118,6 +1175,8 @@ export function LiveTvScreen() {
   return {
     el, name: 'livetv', onShow() { ambience.restore(); },
     onKey(action) {
+      if (view === 'menu') return menu ? menuKey(action) : true;
+      if (action === 'menu' && (view === 'grid' || view === 'guide')) { openMenu(); return true; }
       if (view === 'playing') {
         switch (action) {
           case 'up': case 'pageup': zap(1); return true;

@@ -1,9 +1,9 @@
 plugins { id 'com.android.application' }
 android {
-    namespace 'org.samsucks.humax'
+    namespace 'io.github.danfulton72.easyplex'
     compileSdk 35
     defaultConfig {
-        applicationId 'org.samsucks.humax'
+        applicationId 'io.github.danfulton72.easyplex'
         minSdk 28
         targetSdk 28
         // GITHUB_RUN_NUMBER can exceed Integer.MAX_VALUE on high-volume repos, so
@@ -15,10 +15,10 @@ android {
     }
     signingConfigs {
         persistent {
-            storeFile file(System.getenv('HUMAX_KEYSTORE_PATH') ?: 'humax-release.jks')
-            storePassword System.getenv('HUMAX_KEYSTORE_PASSWORD') ?: ''
-            keyAlias System.getenv('HUMAX_KEY_ALIAS') ?: 'humaxplex'
-            keyPassword System.getenv('HUMAX_KEY_PASSWORD') ?: ''
+            storeFile file(System.getenv('EASYPLEX_KEYSTORE_PATH') ?: 'easyplex-release.jks')
+            storePassword System.getenv('EASYPLEX_KEYSTORE_PASSWORD') ?: ''
+            keyAlias System.getenv('EASYPLEX_KEY_ALIAS') ?: 'easyplex'
+            keyPassword System.getenv('EASYPLEX_KEY_PASSWORD') ?: ''
         }
     }
     buildTypes {
@@ -30,6 +30,8 @@ android {
             signingConfig signingConfigs.persistent
         }
     }
+    // The web UI lives in /web at the repository root and is packaged as-is.
+    sourceSets { main { assets.srcDirs = ['../../web'] } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 dependencies {
@@ -39,5 +41,5 @@ dependencies {
     implementation 'androidx.media3:media3-ui:1.4.1'
 }
 android.applicationVariants.all { variant ->
-    variant.outputs.all { outputFileName = "HumaxPlex-${variant.buildType.name}.apk" }
+    variant.outputs.all { outputFileName = "EasyPlex-${variant.buildType.name}.apk" }
 }

@@ -1,71 +1,95 @@
-# HumaxPlex
+# EasyPlex
 
-Experimental Android 9 TV port of [SamSUCKS](https://github.com/rfaile313/samsucks) for Humax FVP-4KGTR.
+A fast, remote-friendly Plex client for Android TV boxes, with a Live TV guide,
+DVR recording and direct Dispatcharr playback.
 
-**Status:** untested source port; no verified APK yet. Not affiliated with Plex, Samsung or Humax.
+Tested on the Humax FVP-4KGTR (Android 9). Intended to work on other Android TV
+and Google TV devices such as the Dangbei DBOX02 (Android 11). Not affiliated
+with Plex, Humax, Dangbei or Google.
 
-## Build on Windows
+## Project layout
 
-Install Git for Windows, Python 3, Android Studio with JDK 17, Android SDK Platform 35 and SDK Build-Tools. Clone this repository, then run in PowerShell:
+| Path | What it is |
+| --- | --- |
+| `web/` | The user interface (HTML, CSS and JavaScript), packaged into the APK as-is |
+| `web/js/screens/livetv.js`, `web/css/livetv.css` | Live TV guide, recording and channel zapping |
+| `android/` | The Android shell: WebView, Media3 video player and remote-key handling |
+| `scripts/make_tv_banner.py` | Generates the Android TV launcher banner from the app icon |
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\prepare-windows.ps1
-```
+Everything needed to build is in this repository; nothing is downloaded or
+patched at build time.
 
-Open `android/` in Android Studio. Configure Gradle 8.7 if required (this project does not include a Gradle wrapper), sync, then **Build > Build APK(s)**. The expected result is `android/app/build/outputs/apk/debug/HumaxPlex-debug.apk`.
+## Build
 
-The script clones upstream SamSUCKS and applies Android-specific adaptations. Internet access is required. The original Plex UI remains copyright its authors and is licensed under GPL-3.0; see [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).
+### GitHub Actions (recommended)
+
+Select **Actions → Build EasyPlex debug APK → Run workflow** (it also runs on
+every push to `main`) and download the `EasyPlex-debug-apk` artifact. The
+artifact is a ZIP; extract the APK before installing.
+
+### Android Studio
+
+Install Android Studio with JDK 17, SDK Platform 35 and Build-Tools. Optionally
+run `python scripts/make_tv_banner.py` (needs Pillow) to generate the launcher
+banner. Open `android/`, use Gradle 8.7 if asked (no wrapper is included), sync,
+then **Build → Build APK(s)**. Output:
+`android/app/build/outputs/apk/debug/EasyPlex-debug.apk`.
 
 ## APK updates and permanent signing
 
-The GitHub Actions APK uses a persistent signing certificate and a version code
-derived from the GitHub Actions run number. **Four repository Actions secrets
-must be configured once before the workflow can produce an APK.** An APK signed
-with a different key cannot upgrade a previously installed APK.
+The GitHub Actions APK is signed with a persistent certificate and a version
+code derived from the run number, so new builds install over old ones. **Four
+repository Actions secrets must be configured once.** An APK signed with a
+different key cannot upgrade an installed one.
 
-1. Generate a keystore on your computer (JDK 17 `keytool`):
-
-   ```bash
-   keytool -genkeypair -v -keystore humax-release.jks -alias humaxplex -keyalg RSA -keysize 3072 -validity 10000
-   ```
-
-   Choose strong passwords and back up `humax-release.jks` and the passwords
-   somewhere safe. Never commit the keystore to GitHub.
-
-2. Encode the keystore to one text line:
+1. Generate a keystore (JDK 17 `keytool`):
 
    ```bash
-   python -c "import base64;print(base64.b64encode(open('humax-release.jks','rb').read()).decode())"
+   keytool -genkeypair -v -keystore easyplex-release.jks -alias easyplex -keyalg RSA -keysize 3072 -validity 10000
    ```
 
-3. Open [Repository → Settings → Secrets and variables → Actions](https://github.com/danfulton72/HumaxPlex/settings/secrets/actions).
-   Create these **repository secrets**:
+   Back up `easyplex-release.jks` and its passwords. Never commit the keystore.
+
+2. Encode it to one line:
+
+   ```bash
+   python -c "import base64;print(base64.b64encode(open('easyplex-release.jks','rb').read()).decode())"
+   ```
+
+3. In **Repository → Settings → Secrets and variables → Actions**, create:
 
    | Secret | Value |
    | --- | --- |
-   | `HUMAX_KEYSTORE_BASE64` | Full base64 text from step 2 |
-   | `HUMAX_KEYSTORE_PASSWORD` | Password chosen for the keystore |
-   | `HUMAX_KEY_ALIAS` | `humaxplex` |
-   | `HUMAX_KEY_PASSWORD` | Password for the `humaxplex` key (often same as keystore password) |
+   | `EASYPLEX_KEYSTORE_BASE64` | Base64 text from step 2 |
+   | `EASYPLEX_KEYSTORE_PASSWORD` | Keystore password |
+   | `EASYPLEX_KEY_ALIAS` | Key alias (`easyplex` above) |
+   | `EASYPLEX_KEY_PASSWORD` | Key password (often the keystore password) |
 
-4. Select **Actions → Build HumaxPlex debug APK → Run workflow**.
-   Download the `HumaxPlex-debug-apk` artifact.
+   Secrets created under the earlier `HUMAX_*` names are still accepted.
 
-You must uninstall the older, differently signed debug APK **once** before
-installing the first permanently signed build. Back up your app settings first
-if needed. Future builds signed with the **same keystore** can update in place
-without uninstalling. Do not regenerate the key: losing it prevents upgrades.
+The workflow fails deliberately when signing secrets are missing rather than
+producing a differently signed APK.
 
-The workflow deliberately fails when signing secrets are missing rather than
-silently making a differently signed APK.
+## Installing
+
+Copy the APK to a USB stick or use a file manager / "Send files to TV" app,
+then open it and allow installation from that source when prompted. Root and
+ADB are not needed. EasyPlex appears in the TV's app list.
+
+EasyPlex has its own package ID (`io.github.danfulton72.easyplex`), so it
+installs alongside the older HumaxPlex app rather than replacing it; uninstall
+HumaxPlex once you are happy.
 
 ## Live TV remote keys
 
-Live TV uses the Plex DVR guide; with a Dispatcharr HDHomeRun tuner, streams play directly from Dispatcharr.
+Live TV uses the Plex DVR guide; with a Dispatcharr HDHomeRun tuner, streams
+play directly from Dispatcharr. Remotes without colour or record keys (such as
+Google TV remotes) can **hold OK** for an options list with the same actions.
 
 | Where | Key | Action |
 | --- | --- | --- |
 | Guide | OK / Play | Watch channel |
+| Guide | Hold OK / Menu | Options: watch, record, recordings, day guide, diagnostics |
 | Guide | Left / Right | Previous / next programme |
 | Guide | Up / Down, CH+ / CH− | Channel / page of channels |
 | Guide | Record / Red | Record: choose episode or series and the library to save into |
@@ -77,8 +101,8 @@ Live TV uses the Plex DVR guide; with a Dispatcharr HDHomeRun tuner, streams pla
 | Watching | Right | Audio and subtitle tracks |
 | Watching | Back | Return to guide |
 
-## Caveats
+## Licence
 
-Android WebView HTML5 playback, CORS from Plex, TV remote keys and text entry may require further work. HLS playback is firmware-dependent. Do not assume the APK works until tested on your box. The device need not be rooted.
-
-See [BUILDING.md](BUILDING.md) for troubleshooting and the optional CI build.
+EasyPlex is free software under the GNU GPL v3; see [LICENSE](LICENSE) and
+[NOTICE.md](NOTICE.md) for attribution. See [BUILDING.md](BUILDING.md) for
+troubleshooting.

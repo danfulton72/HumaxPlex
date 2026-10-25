@@ -1,4 +1,4 @@
-package org.samsucks.humax;
+package io.github.danfulton72.easyplex;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -59,7 +59,7 @@ public final class MainActivity extends Activity {
     private String playbackError = null;
     private long playbackStartedAt = 0;
     private String playbackKind = "unknown";
-    // Live TV: set by HumaxVideo.setLiveBanner() after open(); cleared by closeVideo().
+    // Live TV: set by EasyPlexVideo.setLiveBanner() after open(); cleared by closeVideo().
     // In live mode channel keys go to the web app and the HUD shows now/next.
     private boolean liveMode = false;
     private String liveBanner = null;
@@ -75,7 +75,7 @@ public final class MainActivity extends Activity {
         layout = new FrameLayout(this);
         layout.addView(web, new FrameLayout.LayoutParams(-1, -1));
         diagnostics = new TextView(this);
-        diagnostics.setText("HumaxPlex DIAG-4 | WebView initializing");
+        diagnostics.setText("EasyPlex DIAG-4 | WebView initializing");
         diagnostics.setTextSize(13);
         diagnostics.setTextColor(Color.WHITE);
         diagnostics.setBackgroundColor(0xe6000000);
@@ -112,7 +112,7 @@ public final class MainActivity extends Activity {
                         conn.setInstanceFollowRedirects(true);
                         int code = conn.getResponseCode();
                         if (code < 200 || code >= 300) {
-                            android.util.Log.w("HumaxPlex", "Image proxy HTTP " + code);
+                            android.util.Log.w("EasyPlex", "Image proxy HTTP " + code);
                             conn.disconnect();
                             return new WebResourceResponse("text/plain", "UTF-8", code,
                                 "Image HTTP error", java.util.Collections.emptyMap(),
@@ -124,7 +124,7 @@ public final class MainActivity extends Activity {
                         InputStream stream = conn.getInputStream();
                         return new WebResourceResponse(mime, null, stream);
                     } catch (Exception ex) {
-                        android.util.Log.w("HumaxPlex", "Image proxy failed: " + ex.getClass().getSimpleName());
+                        android.util.Log.w("EasyPlex", "Image proxy failed: " + ex.getClass().getSimpleName());
                         return new WebResourceResponse("text/plain", "UTF-8",
                             new java.io.ByteArrayInputStream(new byte[0]));
                     }
@@ -133,7 +133,7 @@ public final class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient());
-        web.addJavascriptInterface(new NativeVideoBridge(), "HumaxVideo");
+        web.addJavascriptInterface(new NativeVideoBridge(), "EasyPlexVideo");
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
         web.postDelayed(new Runnable() {
             @Override public void run() {
@@ -141,7 +141,7 @@ public final class MainActivity extends Activity {
                 final int width = web.getWidth(), height = web.getHeight();
                 final float density = getResources().getDisplayMetrics().density;
                 String js = "(function(){return JSON.stringify({inner:[innerWidth,innerHeight],screen:[screen.width,screen.height],dpr:devicePixelRatio,body:[Math.round(document.body.getBoundingClientRect().width),Math.round(document.body.getBoundingClientRect().height)],transform:document.body.style.transform})})()";
-                web.evaluateJavascript(js, result -> diagnostics.setText("HumaxPlex DIAG-4 | native " + width + "x" + height + " density " + density + "\\nJS " + result));
+                web.evaluateJavascript(js, result -> diagnostics.setText("EasyPlex DIAG-4 | native " + width + "x" + height + " density " + density + "\\nJS " + result));
             }
         }, 3000);
         diagnostics.setVisibility(View.GONE);
@@ -159,7 +159,7 @@ public final class MainActivity extends Activity {
                         " dropped=" + (counts == null ? "?" : counts.droppedBufferCount);
                 }
                 if (diagnostics != null && diagnostics.getVisibility() == View.VISIBLE) diagnostics.setText(
-                    "HumaxPlex DIAG-6 | Images failed: " + imageFailures +
+                    "EasyPlex DIAG-6 | Images failed: " + imageFailures +
                     " last: " + lastImageIssue + "\\n" + videoStats);
                 if (web != null) updateHandler.postDelayed(this, 500);
             }
@@ -217,7 +217,7 @@ public final class MainActivity extends Activity {
     }
     private void js(String event, String argument) {
         if (web == null) return;
-        web.evaluateJavascript("window.__humaxVideoEvent && window.__humaxVideoEvent('" +
+        web.evaluateJavascript("window.__easyplexVideoEvent && window.__easyplexVideoEvent('" +
             event + "'," + argument + ")", null);
     }
     private void setPlaybackAwake(boolean awake) {
@@ -307,7 +307,7 @@ public final class MainActivity extends Activity {
                                 showPlaybackHud();
                                 js("error", org.json.JSONObject.quote("NATIVE_STALL"));
                                 web.evaluateJavascript(
-                                    "window.__humaxLivePlayError && window.__humaxLivePlayError(\"NATIVE_STALL\")", null);
+                                    "window.__easyplexLivePlayError && window.__easyplexLivePlayError(\"NATIVE_STALL\")", null);
                             } else {
                                 js("buffer", "true");
                             }
@@ -334,9 +334,9 @@ public final class MainActivity extends Activity {
                         showPlaybackHud();
                         js("error", org.json.JSONObject.quote(error.getMessage() == null ? "Media3 playback failed" : error.getMessage()));
                         // Also notify the Live TV screen's own error hook (it drives
-                        // playback directly, not through the SamSUCKS player listener).
+                        // playback directly, not through the main player listener).
                         web.evaluateJavascript(
-                            "window.__humaxLivePlayError && window.__humaxLivePlayError(" +
+                            "window.__easyplexLivePlayError && window.__easyplexLivePlayError(" +
                             org.json.JSONObject.quote(playbackError) + ")", null);
                     }
                 });
@@ -382,60 +382,7 @@ public final class MainActivity extends Activity {
                 }
                 final String payload = result;
                 runOnUiThread(() -> web.evaluateJavascript(
-                    "window.__humaxHdhrLineup && window.__humaxHdhrLineup(" +
-                    org.json.JSONObject.quote(payload) + ")", null));
-            }).start();
-        }
-        // Lightweight capability probe: sample the first ~1.5 MB of a live TS and sniff
-        // for video codec NAL markers + max resolution, so JS can decide native vs
-        // risky before committing to a full ExoPlayer decode. Returns a JSON object via
-        // window.__humaxProbe. No audio/subtitle detail — just enough to gate playback.
-        @JavascriptInterface public void probeStream(String url) {
-            new Thread(() -> {
-                org.json.JSONObject out = new org.json.JSONObject();
-                try {
-                    HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-                    conn.setConnectTimeout(9000);
-                    conn.setReadTimeout(12000);
-                    conn.setInstanceFollowRedirects(true);
-                    int status = conn.getResponseCode();
-                    if (status != 200) throw new java.io.IOException("probe HTTP " + status);
-                    byte[] buf = new byte[8192];
-                    boolean hevc = false, h264 = false, sawPps = false;
-                    int total = 0;
-                    try (InputStream in = conn.getInputStream()) {
-                        int n;
-                        while ((n = in.read(buf)) != -1) {
-                            total += n;
-                            for (int i = 0; i < n - 4; i++) {
-                                // MPEG-TS sync byte 0x47 followed by an H.264 Annex-B start code
-                                if (buf[i] == (byte)0x47 && buf[i+1] == 0 && buf[i+2] == 0 && buf[i+3] == 1) {
-                                    int nalType = buf[i+4] & 0x1F;
-                                    if (nalType >= 1 && nalType <= 5) h264 = true;
-                                    else if (nalType == 7) sawPps = true;
-                                }
-                                // HEVC length-prefixed or Annex-B VPS/SPS/PPS (types 32-34)
-                                if (buf[i] == (byte)0x47 && buf[i+1] == 0 && buf[i+2] == 0 && buf[i+3] == 1) {
-                                    int t = buf[i+4] & 0x3F;
-                                    if (t >= 32 && t <= 34) hevc = true;
-                                }
-                            }
-                            if (total > 1500000) break;
-                        }
-                    } finally { conn.disconnect(); }
-                    out.put("ok", true);
-                    out.put("hevc", hevc);
-                    out.put("h264", h264 || sawPps);
-                    out.put("bytes", total);
-                } catch (Exception e) {
-                    try {
-                        out.put("ok", false);
-                        out.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
-                    } catch (org.json.JSONException ignored) { /* keep whatever we have */ }
-                }
-                final String payload = out.toString();
-                runOnUiThread(() -> web.evaluateJavascript(
-                    "window.__humaxProbe && window.__humaxProbe(" +
+                    "window.__easyplexHdhrLineup && window.__easyplexHdhrLineup(" +
                     org.json.JSONObject.quote(payload) + ")", null));
             }).start();
         }
@@ -453,6 +400,22 @@ public final class MainActivity extends Activity {
             return nativePlayer == null ? 0 : nativePlayer.getCurrentPosition();
         }
         @JavascriptInterface public void close() { runOnUiThread(() -> closeVideo()); }
+        // Identity of this box for Plex: manufacturer, model, Android and app version.
+        @JavascriptInterface public String deviceInfo() {
+            org.json.JSONObject out = new org.json.JSONObject();
+            try {
+                out.put("manufacturer", android.os.Build.MANUFACTURER);
+                out.put("model", android.os.Build.MODEL);
+                out.put("release", android.os.Build.VERSION.RELEASE);
+                String version = "";
+                try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
+                catch (Exception ignored) { /* leave blank */ }
+                out.put("appVersion", version == null ? "" : version);
+            } catch (org.json.JSONException ignored) { /* return what we have */ }
+            return out.toString();
+        }
+        // Back on the home screen leaves the app.
+        @JavascriptInterface public void exit() { runOnUiThread(() -> finish()); }
         // Marks the current stream as live TV and shows a now/next banner over it.
         // progress is 0-1000 through the current programme, or -1 to hide the bar.
         @JavascriptInterface public void setLiveBanner(String text, int progress) {
@@ -528,7 +491,7 @@ public final class MainActivity extends Activity {
     }
     private void requestQuality(int bitrate, String resolution) {
         if (nativePlayer == null) return;
-        String statement = "window.__humaxSetQuality && window.__humaxSetQuality(" +
+        String statement = "window.__easyplexSetQuality && window.__easyplexSetQuality(" +
             bitrate + "," + org.json.JSONObject.quote(resolution) + ")";
         web.evaluateJavascript(statement, null);
         showPlaybackHud();
@@ -626,13 +589,47 @@ public final class MainActivity extends Activity {
             case KeyEvent.KEYCODE_PROG_BLUE: return "blue";
             case KeyEvent.KEYCODE_INFO: return "info";
             case KeyEvent.KEYCODE_LAST_CHANNEL: return "last";
+            case KeyEvent.KEYCODE_MENU: return "menu";
             default: return null;
         }
+    }
+    // OK/Select: a short press is "enter" (sent on release); holding it for
+    // LONG_PRESS_MS sends "menu" instead. Remotes without colour or record keys
+    // (e.g. Google TV remotes) reach Live TV options this way.
+    private static final long LONG_PRESS_MS = 600;
+    private boolean selectHeld = false, selectLongSent = false;
+    private final Runnable selectLongPress = () -> {
+        if (!selectHeld || web == null) return;
+        selectLongSent = true;
+        sendAction("menu");
+    };
+    private void sendAction(String a) {
+        if (web != null) web.evaluateJavascript("window.__androidAction && window.__androidAction('" + a + "')", null);
+    }
+    private boolean isSelectKey(int code) {
+        return code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (settingsDialog != null && settingsDialog.isShowing()) return super.dispatchKeyEvent(event);
         // Route remote keys before the Media3 video view can consume them.
         String a = action(event.getKeyCode());
+        boolean vodPlaying = nativePlayer != null && !liveMode && nativePlayer.getPlaybackState() != Player.STATE_IDLE;
+        if (a != null && web != null && isSelectKey(event.getKeyCode()) && !vodPlaying) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                selectHeld = true;
+                selectLongSent = false;
+                updateHandler.postDelayed(selectLongPress, LONG_PRESS_MS);
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                updateHandler.removeCallbacks(selectLongPress);
+                boolean wasHeld = selectHeld;
+                selectHeld = false;
+                if (wasHeld && !selectLongSent) {
+                    if (nativePlayer != null) showPlaybackHud();
+                    sendAction("enter");
+                }
+            }
+            return true;
+        }
         if (a != null && web != null) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 // The native player overlays the HTML controls. Handle playback keys
