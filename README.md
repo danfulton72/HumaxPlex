@@ -80,27 +80,38 @@ EasyPlex has its own package ID (`io.github.danfulton72.easyplex`), so it
 installs alongside the older HumaxPlex app rather than replacing it; uninstall
 HumaxPlex once you are happy.
 
-## Live TV remote keys
+## Remote keys
 
-Live TV uses the Plex DVR guide; with a Dispatcharr HDHomeRun tuner, streams
-play directly from Dispatcharr. Remotes without colour or record keys (such as
-Google TV remotes) can **hold OK** for an options list with the same actions.
+Remotes without colour, record or number keys (such as Google TV remotes) can
+**hold OK** on any screen for an options list with the same actions.
 
 | Where | Key | Action |
 | --- | --- | --- |
+| Anywhere | Hold OK / Menu | Options for the focused item or screen |
+| Home | Back, Back | Exit (first press shows a reminder) |
+| Library | Hold OK | Sort, unwatched only, jump to letter, item options |
+| Film / show | Left / Right (hold to speed up) | Seek, with a preview before it jumps |
+| Film / show | OK / Play-Pause | Show progress / pause |
+| Film / show | Down or hold OK | Audio, subtitles, quality |
 | Guide | OK / Play | Watch channel |
-| Guide | Hold OK / Menu | Options: watch, record, recordings, day guide, diagnostics |
+| Guide | 0–9 | Go to channel number |
+| Guide | Hold OK / Menu | Watch, record, favourites, choose channel list, recordings, day guide, diagnostics |
 | Guide | Left / Right | Previous / next programme |
 | Guide | Up / Down, CH+ / CH− | Channel / page of channels |
 | Guide | Record / Red | Record: choose episode or series and the library to save into |
 | Guide | FF / RW | Forward / back one day |
 | Guide | Green · Yellow · Blue | Diagnostics · channel day guide · recordings |
 | Recordings | OK / Red | Cancel: one-off recording, skip one episode, or cancel a series |
-| Watching | Up / CH+, Down / CH− | Next / previous channel |
+| Watching | Up / CH+, Down / CH− | Next / previous channel in the current list |
+| Watching | 0–9 | Go to channel number |
 | Watching | Left / Last | Previous channel |
 | Watching | OK / Info | Now & next banner |
+| Watching | Hold OK | Record what's on, add/remove favourite |
 | Watching | Right | Audio and subtitle tracks |
 | Watching | Back | Return to guide |
+
+Live TV opens on the channel you last watched. **Settings → Start screen**
+can open EasyPlex straight into the Live TV guide or the last channel.
 
 ## Licence
 

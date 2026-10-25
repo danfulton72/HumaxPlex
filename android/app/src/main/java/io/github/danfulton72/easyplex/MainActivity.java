@@ -62,6 +62,13 @@ public final class MainActivity extends Activity {
     // Live TV: set by EasyPlexVideo.setLiveBanner() after open(); cleared by closeVideo().
     // In live mode channel keys go to the web app and the HUD shows now/next.
     private boolean liveMode = false;
+    // Films/shows: the web player supplies the HUD text (title, times, seek
+    // preview) because it knows the real position across HLS restarts.
+    private TextView playbackTitle;
+    private String vodTitle = null, vodLine = null;
+    private int vodProgress = -1;
+    private boolean vodSticky = false;
+    private long lastRepeatSent = 0;
     private String liveBanner = null;
     private int liveProgress = -1;
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
@@ -202,6 +209,16 @@ public final class MainActivity extends Activity {
                 playbackHud.setVisibility(View.GONE);
             return;
         }
+        if (vodLine != null) {
+            playbackTitle.setText(vodTitle == null ? "" : vodTitle);
+            playbackTitle.setVisibility(vodTitle == null || vodTitle.isEmpty() ? View.GONE : View.VISIBLE);
+            playbackTimes.setText(vodLine);
+            playbackProgress.setVisibility(vodProgress >= 0 ? View.VISIBLE : View.GONE);
+            if (vodProgress >= 0) playbackProgress.setProgress(Math.min(1000, vodProgress));
+            if (!vodSticky && nativePlayer.isPlaying() && android.os.SystemClock.uptimeMillis()-hudShownAt>5000)
+                playbackHud.setVisibility(View.GONE);
+            return;
+        }
         long pos = Math.max(0, nativePlayer.getCurrentPosition());
         long duration = nativePlayer.getDuration();
         if (duration > 0) {
@@ -229,6 +246,7 @@ public final class MainActivity extends Activity {
         liveMode = false;
         liveBanner = null;
         liveProgress = -1;
+        vodTitle = null; vodLine = null; vodProgress = -1; vodSticky = false;
         if (nativePlayer != null) {
             nativePlayer.release();
             nativePlayer = null;
@@ -274,6 +292,12 @@ public final class MainActivity extends Activity {
                 playbackHud.setOrientation(LinearLayout.VERTICAL);
                 playbackHud.setBackgroundColor(0xcc10141d);
                 playbackHud.setPadding(32, 16, 32, 24);
+                playbackTitle = new TextView(MainActivity.this);
+                playbackTitle.setTextColor(Color.WHITE);
+                playbackTitle.setTextSize(22);
+                playbackTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                playbackTitle.setVisibility(View.GONE);
+                playbackHud.addView(playbackTitle);
                 playbackTimes = new TextView(MainActivity.this);
                 playbackTimes.setTextColor(Color.WHITE);
                 playbackTimes.setTextSize(17);
@@ -413,6 +437,33 @@ public final class MainActivity extends Activity {
                 out.put("appVersion", version == null ? "" : version);
             } catch (org.json.JSONException ignored) { /* return what we have */ }
             return out.toString();
+        }
+        // Film/show HUD text from the web player. progress is 0-1000 or -1;
+        // show brings the HUD up; sticky keeps it up (paused, seeking).
+        @JavascriptInterface public void setHud(String title, String line, int progress, boolean show, boolean sticky) {
+            runOnUiThread(() -> {
+                if (nativePlayer == null || liveMode) return;
+                vodTitle = title; vodLine = line; vodProgress = progress; vodSticky = sticky;
+                if (show) showPlaybackHud();
+                updatePlaybackHud();
+            });
+        }
+        @JavascriptInterface public void hideHud() {
+            runOnUiThread(() -> { vodSticky = false; if (playbackHud != null) playbackHud.setVisibility(View.GONE); });
+        }
+        // A list of choices shown natively (usable over video, where the web UI
+        // is hidden). The chosen index is passed to window.__easyplexMenuChoice.
+        @JavascriptInterface public void showMenu(String title, String itemsJson) {
+            runOnUiThread(() -> {
+                try {
+                    org.json.JSONArray arr = new org.json.JSONArray(itemsJson);
+                    String[] labels = new String[arr.length()];
+                    for (int i = 0; i < arr.length(); i++) labels[i] = arr.getString(i);
+                    showOptions(title, labels, i -> {
+                        if (web != null) web.evaluateJavascript("window.__easyplexMenuChoice && window.__easyplexMenuChoice(" + i + ")", null);
+                    });
+                } catch (org.json.JSONException ignored) { /* bad list: show nothing */ }
+            });
         }
         // Back on the home screen leaves the app.
         @JavascriptInterface public void exit() { runOnUiThread(() -> finish()); }
@@ -568,6 +619,8 @@ public final class MainActivity extends Activity {
             });
     }
     private String action(int code) {
+        if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) return "digit" + (code - KeyEvent.KEYCODE_0);
+        if (code >= KeyEvent.KEYCODE_NUMPAD_0 && code <= KeyEvent.KEYCODE_NUMPAD_9) return "digit" + (code - KeyEvent.KEYCODE_NUMPAD_0);
         switch(code) {
             case KeyEvent.KEYCODE_DPAD_LEFT: return "left";
             case KeyEvent.KEYCODE_DPAD_RIGHT: return "right";
@@ -597,11 +650,14 @@ public final class MainActivity extends Activity {
     // LONG_PRESS_MS sends "menu" instead. Remotes without colour or record keys
     // (e.g. Google TV remotes) reach Live TV options this way.
     private static final long LONG_PRESS_MS = 600;
+    private static final long SEEK_REPEAT_MS = 150;
     private boolean selectHeld = false, selectLongSent = false;
+    // Holding OK: options list in the web UI, or playback settings over a film/show.
     private final Runnable selectLongPress = () -> {
         if (!selectHeld || web == null) return;
         selectLongSent = true;
-        sendAction("menu");
+        if (isVodPlaying()) showTrackMenu();
+        else sendAction("menu");
     };
     private void sendAction(String a) {
         if (web != null) web.evaluateJavascript("window.__androidAction && window.__androidAction('" + a + "')", null);
@@ -609,12 +665,16 @@ public final class MainActivity extends Activity {
     private boolean isSelectKey(int code) {
         return code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
     }
+    private boolean isVodPlaying() {
+        return nativePlayer != null && !liveMode && nativePlayer.getPlaybackState() != Player.STATE_IDLE;
+    }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (settingsDialog != null && settingsDialog.isShowing()) return super.dispatchKeyEvent(event);
         // Route remote keys before the Media3 video view can consume them.
         String a = action(event.getKeyCode());
-        boolean vodPlaying = nativePlayer != null && !liveMode && nativePlayer.getPlaybackState() != Player.STATE_IDLE;
-        if (a != null && web != null && isSelectKey(event.getKeyCode()) && !vodPlaying) {
+        if (a == null || web == null) return super.dispatchKeyEvent(event);
+        // OK/Select: short press = "enter" on release, hold = options.
+        if (isSelectKey(event.getKeyCode())) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 selectHeld = true;
                 selectLongSent = false;
@@ -624,57 +684,66 @@ public final class MainActivity extends Activity {
                 boolean wasHeld = selectHeld;
                 selectHeld = false;
                 if (wasHeld && !selectLongSent) {
-                    if (nativePlayer != null) showPlaybackHud();
+                    if (liveMode && nativePlayer != null) showPlaybackHud();
                     sendAction("enter");
                 }
             }
             return true;
         }
-        if (a != null && web != null) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                // The native player overlays the HTML controls. Handle playback keys
-                // here so pause/seek work even when WebView cannot show the OSD.
-                if (nativePlayer != null && nativePlayer.getPlaybackState() != Player.STATE_IDLE) {
-                    showPlaybackHud();
-                    if (liveMode && !"playpause".equals(a) && !"play".equals(a) && !"pause".equals(a)) {
-                        // Live TV: Right opens audio/subtitles; every other key
-                        // (channel up/down, last channel, now/next, back) goes to JS.
-                        if ("right".equals(a)) {
-                            if (event.getRepeatCount() == 0) showTrackMenu();
-                        } else {
-                            web.evaluateJavascript("window.__androidAction && window.__androidAction('" + a + "')", null);
-                        }
-                        return true;
-                    }
-                    switch (a) {
-                        case "down":
-                            if (event.getRepeatCount() == 0) showTrackMenu();
-                            return true;
-                        case "playpause":
-                        case "enter":
-                            if (event.getRepeatCount() == 0) {
-                                if (nativePlayer.isPlaying()) nativePlayer.pause();
-                                else nativePlayer.play();
-                            }
-                            return true;
-                        case "play": nativePlayer.play(); return true;
-                        case "pause": nativePlayer.pause(); return true;
-                        case "left": case "rw":
-                            if (event.getRepeatCount() == 0)
-                                nativePlayer.seekTo(Math.max(0, nativePlayer.getCurrentPosition() - 10000));
-                            return true;
-                        case "right": case "ff":
-                            if (event.getRepeatCount() == 0)
-                                nativePlayer.seekTo(Math.min(nativePlayer.getDuration() > 0 ? nativePlayer.getDuration() : Long.MAX_VALUE,
-                                    nativePlayer.getCurrentPosition() + 10000));
-                            return true;
-                    }
+        if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
+        if (nativePlayer != null && nativePlayer.getPlaybackState() != Player.STATE_IDLE) {
+            if (liveMode) {
+                showPlaybackHud();
+                // Live TV: Right opens audio/subtitles; play/pause act directly;
+                // every other key (channels, last, now/next, menu, back) goes to JS.
+                switch (a) {
+                    case "right": if (event.getRepeatCount() == 0) showTrackMenu(); return true;
+                    case "playpause": if (event.getRepeatCount() == 0) { if (nativePlayer.isPlaying()) nativePlayer.pause(); else nativePlayer.play(); } return true;
+                    case "play": nativePlayer.play(); return true;
+                    case "pause": nativePlayer.pause(); return true;
                 }
-                web.evaluateJavascript("window.__androidAction && window.__androidAction('" + a + "')", null);
+                sendAction(a);
+                return true;
             }
+            // Films/shows: Down opens playback settings natively; everything
+            // else goes to the web player, which drives seeking, pause (and
+            // reports both to Plex) and the HUD text. Held seek keys repeat at
+            // a steady pace so the web player's accelerating steps stay usable.
+            if ("down".equals(a)) { if (event.getRepeatCount() == 0) showTrackMenu(); return true; }
+            if (event.getRepeatCount() > 0) {
+                boolean seekKey = "left".equals(a) || "right".equals(a) || "ff".equals(a) || "rw".equals(a);
+                long now = android.os.SystemClock.uptimeMillis();
+                if (!seekKey || now - lastRepeatSent < SEEK_REPEAT_MS) return true;
+                lastRepeatSent = now;
+            }
+            sendAction(a);
             return true;
         }
-        return super.dispatchKeyEvent(event);
+        sendAction(a);
+        return true;
+    }
+    // Leaving the app (Home, input switch, screen off): films pause, live TV
+    // stops so the Dispatcharr stream is released. The web UI decides what
+    // that means for its screens through window.__easyplexLifecycle.
+    @Override protected void onStop() {
+        if (nativePlayer != null) {
+            if (liveMode) closeVideo();
+            else nativePlayer.pause();
+        }
+        if (web != null) web.evaluateJavascript("window.__easyplexLifecycle && window.__easyplexLifecycle('stop')", null);
+        super.onStop();
+    }
+    @Override protected void onStart() {
+        super.onStart();
+        if (web != null) web.evaluateJavascript("window.__easyplexLifecycle && window.__easyplexLifecycle('start')", null);
+    }
+    @Override protected void onPause() {
+        super.onPause();
+        if (web != null) web.onPause();
+    }
+    @Override protected void onResume() {
+        super.onResume();
+        if (web != null) web.onResume();
     }
     @Override public boolean onKeyDown(int code, KeyEvent event) {
         String a = action(code);

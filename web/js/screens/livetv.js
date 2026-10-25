@@ -16,6 +16,7 @@ import { session } from '../session.js';
 import { useAmbience } from '../ui/backdrop.js';
 import * as router from '../router.js';
 import { identity } from '../plex/client.js';
+import { showOptions, closeOptions, toast } from '../ui/options.js';
 
 // Reuse EPG results when the screen is reopened during the same app session.
 // Keys are "<local YYYY-MM-DD>:<gridKey>", values {time, shows}.
@@ -94,7 +95,7 @@ function rangeOf(m) { const b = airingBounds(m); return hhmm(b.start) + '–' + 
 
 // ---- screen -----------------------------------------------------------------
 
-export function LiveTvScreen() {
+export function LiveTvScreen({ autoplay = false } = {}) {
   const el = h('div', 'screen settings ep-live');
   const ambience = useAmbience();
   h('h1', 'settings-title', el).textContent = 'Live TV & DVR';
@@ -258,7 +259,8 @@ export function LiveTvScreen() {
   function buildGrid() {
     gridEl = h('div', 'hx-grid', el);
     const top = h('div', 'hx-top', gridEl);
-    h('div', 'hx-title', top).textContent = 'Live TV';
+    g.head = h('div', 'hx-title', top);
+    g.head.textContent = 'Live TV';
     g.clock = h('div', 'hx-clock', top);
     const panel = h('section', 'hx-info', gridEl);
     const main = h('div', 'hx-info-main', panel);
@@ -285,6 +287,7 @@ export function LiveTvScreen() {
     key('Channels', 'hx-glyph', '▲▼');
     key('Programmes', 'hx-glyph', '◀▶');
     key('Day', 'hx-glyph', 'FF RW');
+    key('Number', 'hx-glyph', '0–9');
     key('More', 'hx-key', 'Hold OK');
     h('span', 'hx-sp', keys);
     key('Diagnostics', 'hx-dot', '#2FA84F');
@@ -294,7 +297,8 @@ export function LiveTvScreen() {
 
   function renderInfo(row, p) {
     const now = Date.now();
-    g.ch.textContent = channelLabel(row.name || row.channel);
+    g.ch.textContent = (isFavourite(row) ? '★ ' : '') + channelLabel(row.name || row.channel) +
+      (row.channelVcn ? '  ·  ' + row.channelVcn : '');
     g.meta.textContent = '';
     g.chips.textContent = '';
     if (!p) {
@@ -340,6 +344,7 @@ export function LiveTvScreen() {
     gridTop = Math.max(0, Math.min(gridTop, Math.max(0, channelRows.length - ROWS)));
     const a = windowStart, b = windowStart + SPAN;
     const pct = t => ((t - a) / SPAN * 100).toFixed(3) + '%';
+    g.head.textContent = 'Live TV  ·  ' + filterLabel(effectiveFilter());
     g.day.textContent = dayLabel(a).toUpperCase();
     g.hours.textContent = '';
     for (let k = 0; k < 4; k++) {
@@ -353,7 +358,8 @@ export function LiveTvScreen() {
       const ri = gridTop + i;
       const line = h('div', 'hx-row' + (ri === gridIndex ? ' sel' : ''), g.rows);
       const ch = h('div', 'hx-ch', line);
-      h('span', 'hx-name', ch).textContent = channelLabel(row.name || row.channel);
+      h('span', 'hx-name', ch).textContent = (effectiveFilter() !== 'fav' && isFavourite(row) ? '★ ' : '') +
+        channelLabel(row.name || row.channel);
       const track = h('div', 'hx-track', line);
       const shows = showsBetween(row, a, b);
       const block = (start, end, cls, title, sub, rec) => {
@@ -439,8 +445,12 @@ export function LiveTvScreen() {
     fillGrid();
   }
   function activateGrid() {
-    channelRows = entries.slice();
-    gridIndex = 0; gridTop = 0;
+    allRows = entries.slice();
+    applyFilter(null);
+    // Open on the channel last watched, if it is in the current list.
+    const last = prefGet(LAST_KEY);
+    const lastIdx = last ? channelRows.findIndex(r => chanKey(r) === last) : -1;
+    if (lastIdx >= 0) { gridIndex = lastIdx; gridTop = Math.max(0, gridIndex - 3); }
     focusTime = Date.now();
     windowStart = minFocus();
     showGrid();
@@ -452,7 +462,135 @@ export function LiveTvScreen() {
       if (focusTime < Date.now()) focusTime = Date.now();
       renderGrid();
     }, 30000);
+    if (autoplay) {
+      autoplay = false;
+      if (lastIdx >= 0) tuneRow(channelRows[gridIndex]);
+    }
   }
+
+  // ---- favourites, channel groups, number entry -------------------------------
+  // Favourites and the chosen list are remembered on this box. Groups come from
+  // the "XX|" prefix Dispatcharr channel names carry (shown only if there are
+  // two or more). Number entry searches every channel, not just the list shown.
+  const FAV_KEY = 'easyplexLiveFavourites', FILTER_KEY = 'easyplexLiveFilter', LAST_KEY = 'easyplexLiveLastChannel';
+  let allRows = [];
+  let favourites = new Set();
+  try { favourites = new Set(JSON.parse(prefGet(FAV_KEY) || '[]')); } catch (e) { favourites = new Set(); }
+  let filter = prefGet(FILTER_KEY) || 'auto';
+  function chanKey(row) { return String(row?.channelId || row?.gridKey || row?.channelVcn || row?.name || ''); }
+  function isFavourite(row) { return favourites.has(chanKey(row)); }
+  function channelGroup(row) {
+    const name = String(row?.name || row?.channel || '').trim().replace(/^\d+\s+/, '');
+    const bar = name.indexOf('|');
+    return bar > 0 ? name.slice(0, bar).trim() : '';
+  }
+  function groups() {
+    const out = [];
+    for (const r of allRows) { const gname = channelGroup(r); if (gname && !out.includes(gname)) out.push(gname); }
+    return out.length > 1 ? out : [];
+  }
+  function effectiveFilter() {
+    if (filter === 'auto') return favourites.size ? 'fav' : 'all';
+    if (filter === 'fav' && !favourites.size) return 'all';
+    if (filter.startsWith('group:') && !groups().includes(filter.slice(6))) return 'all';
+    return filter;
+  }
+  function filterLabel(f) {
+    if (f === 'fav') return 'Favourites';
+    if (f.startsWith('group:')) return f.slice(6) + ' channels';
+    return 'All channels';
+  }
+  function applyFilter(keepRow) {
+    const f = effectiveFilter();
+    let rows = allRows;
+    if (f === 'fav') rows = allRows.filter(isFavourite);
+    else if (f.startsWith('group:')) rows = allRows.filter(r => channelGroup(r) === f.slice(6));
+    channelRows = rows.length ? rows : allRows;
+    const keep = keepRow ? channelRows.indexOf(keepRow) : -1;
+    gridIndex = keep >= 0 ? keep : Math.min(gridIndex, Math.max(0, channelRows.length - 1));
+    gridTop = Math.max(0, gridIndex - 3);
+  }
+  function setFilter(f) {
+    filter = f;
+    prefSet(FILTER_KEY, f);
+    applyFilter(channelRows[gridIndex]);
+    if (view === 'grid') { renderGrid(); fillGrid(); }
+    say('Showing ' + filterLabel(effectiveFilter()).toLowerCase());
+  }
+  function toggleFavourite(row) {
+    if (!row) return;
+    const k = chanKey(row);
+    const adding = !favourites.has(k);
+    // Keep showing the current list; the default ("auto") switches to
+    // favourites the next time Live TV opens.
+    if (filter === 'auto') filter = effectiveFilter();
+    if (adding) favourites.add(k); else favourites.delete(k);
+    prefSet(FAV_KEY, JSON.stringify([...favourites]));
+    const name = channelLabel(row.name || row.channel);
+    if (view === 'playing') banner(row, adding ? '★ Added to favourites' : 'Removed from favourites');
+    else say(adding ? '★ ' + name + ' added to favourites' : name + ' removed from favourites');
+    // Removing the last favourite while viewing favourites falls back to all.
+    applyFilter(view === 'playing' ? playingRow : channelRows[gridIndex]);
+    if (view === 'grid') { renderGrid(); fillGrid(); }
+  }
+  function openFilterMenu() {
+    const f = effectiveFilter();
+    showOptions({
+      eyebrow: 'CHANNELS', title: 'Show channels',
+      items: [
+        { label: favourites.size ? 'Favourites  (' + favourites.size + ')' : 'Favourites  (none yet)', checked: f === 'fav',
+          run: () => favourites.size ? setFilter('fav') : say('Hold OK on a channel and choose “Add to favourites”') },
+        { label: 'All channels  (' + allRows.length + ')', checked: f === 'all', run: () => setFilter('all') },
+        ...groups().map(gname => ({ label: gname + '  (' + allRows.filter(r => channelGroup(r) === gname).length + ')',
+          checked: f === 'group:' + gname, run: () => setFilter('group:' + gname) })),
+      ],
+    });
+  }
+
+  let digits = '', digitTimer = 0, digitEl = null;
+  function findByNumber(n) {
+    if (!n) return null;
+    return allRows.find(r => String(r.channelVcn || '') === n) ||
+      allRows.find(r => Number(r.channelVcn) === Number(n)) || null;
+  }
+  function showDigits() {
+    const row = findByNumber(digits);
+    if (view === 'playing') {
+      const v = native();
+      if (row) banner(row, 'Channel ' + digits);
+      else if (v && v.setLiveBanner) v.setLiveBanner('Channel ' + digits + ' …', -1);
+      return;
+    }
+    if (!digitEl) digitEl = h('div', 'hx-digits', el);
+    digitEl.textContent = '';
+    h('b', '', digitEl).textContent = digits;
+    h('span', '', digitEl).textContent = row ? channelLabel(row.name || row.channel) : '…';
+    digitEl.style.display = '';
+  }
+  function hideDigits() { if (digitEl) digitEl.style.display = 'none'; }
+  function numberKey(d) {
+    digits = (digits + d).slice(-6);
+    clearTimeout(digitTimer);
+    showDigits();
+    digitTimer = setTimeout(commitDigits, 1800);
+  }
+  function cancelDigits() { clearTimeout(digitTimer); digits = ''; hideDigits(); if (view === 'playing' && playingRow) banner(playingRow); }
+  function commitDigits() {
+    clearTimeout(digitTimer);
+    const n = digits;
+    digits = '';
+    hideDigits();
+    const row = findByNumber(n);
+    if (!row) {
+      if (view === 'playing' && playingRow) banner(playingRow, 'No channel ' + n);
+      else say('No channel ' + n);
+      return;
+    }
+    if (!channelRows.includes(row)) { filter = 'all'; prefSet(FILTER_KEY, 'all'); applyFilter(row); say('Showing all channels'); }
+    if (view === 'playing') { clearTimeout(zapTimer); zapTarget = null; tuneRow(row); }
+    else if (view === 'grid') { gridIndex = channelRows.indexOf(row); renderGrid(); fillGrid(); }
+  }
+
 
   // ---- diagnostics ----------------------------------------------------------
 
@@ -1139,6 +1277,22 @@ export function LiveTvScreen() {
     const opt = dlg.opts[dlg.optIdx], lib = dlg.libs[dlg.libIdx], m = dlg.m;
     if (!lib) { dlg.status = 'Choose a library to save into.'; renderDialog(); return; }
     dlg.busy = true; dlg.status = 'Scheduling…'; renderDialog();
+    const r = await scheduleRecording(opt, lib, m);
+    if (!r.ok) {
+      if (!dlg) return;
+      dlg.busy = false;
+      dlg.status = 'Not scheduled: ' + r.error + ' · Green: details';
+      renderDialog();
+      return;
+    }
+    const what = opt.title || 'Recording';
+    closeDialog();
+    if (view === 'grid') renderGrid();
+    say(what + ' scheduled: ' + mainTitle(m) + ' → ' + lib.title + ' · Blue shows recordings');
+  }
+  // Create the recording rule; shared by the record dialog and the
+  // while-watching menu. Resolves { ok } or { ok: false, error }.
+  async function scheduleRecording(opt, lib, m) {
     lastRecordAttempts = [];
     // Plex Web leaves the folder blank and lets Plex pick; try the chosen folder
     // first, then blank if Plex rejects the request.
@@ -1157,75 +1311,72 @@ export function LiveTvScreen() {
         if (err.status !== 400) break;
       }
     }
-    if (lastErr) {
-      if (!dlg) return;
-      dlg.busy = false;
-      dlg.status = 'Not scheduled: ' + lastErr.message + ' · Green: details';
-      renderDialog();
-      return;
-    }
+    if (lastErr) return { ok: false, error: lastErr.message };
     prefSet(REC_PREF + libraryKind(opt), lib.sectionId + ':' + lib.locId);
     if (m.guid) scheduledGuids.add(m.guid);
     if (Number(opt.type) !== 4 && m.grandparentGuid) scheduledGuids.add(m.grandparentGuid);
-    const what = opt.title || 'Recording';
-    closeDialog();
-    if (view === 'grid') renderGrid();
     loadScheduled();
-    say(what + ' scheduled: ' + mainTitle(m) + ' → ' + lib.title + ' · Blue shows recordings');
+    return { ok: true };
   }
   // Options list (hold OK / Menu): everything the colour and record keys do.
-  let menu = null, menuEl = null;
   function openMenu() {
-    const from = view;
     const items = [];
-    if (from === 'grid') {
-      items.push(['Watch channel', () => tuneSelected()]);
-      if (selectedGrid()?.programme) items.push(['Record…', () => recordSelected()]);
-      items.push(['Recordings', () => showScheduled()]);
-      items.push(['Channel day guide', () => openChannelGuide()]);
-    } else if (from === 'guide') {
-      if (entries[index]?.item) items.push(['Record…', () => recordSelected()]);
-      items.push(['Watch channel', () => tuneSelected()]);
-      items.push(['Back to guide', () => showGrid()]);
-    } else return;
-    items.push(['Diagnostics', () => { debugPage = 0; showDebug(); }]);
-    menu = { items, idx: 0, returnTo: from };
-    view = 'menu';
-    if (!menuEl) {
-      menuEl = h('div', 'hx-dialog', el);
-      const box = h('div', 'hx-dlg hx-menu', menuEl);
-      h('div', 'hx-dlg-eyebrow', box).textContent = 'OPTIONS';
-      menuEl._list = h('div', 'hx-menu-list', box);
-      h('div', 'hx-dlg-hint', box).textContent = '▲▼ choose · OK select · Back close';
+    if (view === 'grid') {
+      const row = channelRows[gridIndex];
+      items.push({ label: 'Watch channel', run: () => tuneSelected() });
+      if (selectedGrid()?.programme) items.push({ label: 'Record…', run: () => recordSelected() });
+      if (row) items.push({ label: isFavourite(row) ? 'Remove from favourites' : 'Add to favourites', run: () => toggleFavourite(row) });
+      items.push({ label: 'Channels: ' + filterLabel(effectiveFilter()) + '…', run: openFilterMenu });
+      items.push({ label: 'Recordings', run: () => showScheduled() });
+      items.push({ label: 'Channel day guide', run: () => openChannelGuide() });
+      items.push({ label: 'Diagnostics', run: () => { debugPage = 0; showDebug(); } });
+      showOptions({ title: row ? channelLabel(row.name || row.channel) : 'Live TV', items, focus: 0 });
+    } else if (view === 'guide') {
+      if (entries[index]?.item) items.push({ label: 'Record…', run: () => recordSelected() });
+      items.push({ label: 'Watch channel', run: () => tuneSelected() });
+      items.push({ label: 'Back to guide', run: () => showGrid() });
+      items.push({ label: 'Diagnostics', run: () => { debugPage = 0; showDebug(); } });
+      showOptions({ title: guideChannel ? channelLabel(guideChannel.name || guideChannel.channel) : 'Live TV', items, focus: 0 });
     }
-    renderMenu();
   }
-  function renderMenu() {
-    menuEl.style.display = '';
-    menuEl._list.textContent = '';
-    menu.items.forEach(([label], i) => {
-      h('div', 'hx-btn hx-menu-item' + (i === menu.idx ? ' focus' : ''), menuEl._list).textContent = label;
-    });
-  }
-  function closeMenu() {
-    if (menuEl) menuEl.style.display = 'none';
-    const back = menu?.returnTo || 'grid';
-    menu = null;
-    return back;
-  }
-  function menuKey(action) {
-    switch (action) {
-      case 'up': menu.idx = Math.max(0, menu.idx - 1); renderMenu(); return true;
-      case 'down': menu.idx = Math.min(menu.items.length - 1, menu.idx + 1); renderMenu(); return true;
-      case 'enter': {
-        const run = menu.items[menu.idx][1];
-        view = closeMenu();
-        run();
-        return true;
+
+  // Hold OK while watching: record what's on, favourite the channel. The web
+  // page is hidden behind the video, so the list is shown natively.
+  async function openLiveMenu() {
+    const v = native();
+    const row = playingRow;
+    if (!v || !v.showMenu || !row) return;
+    const m = airingAt(row, Date.now());
+    const choices = [];
+    if (m && (m.guid || m.ratingKey)) {
+      banner(row, 'Getting recording options…');
+      try {
+        const [template, sections] = await Promise.all([
+          server.get('/media/subscriptions/template', m.guid ? { guid: m.guid } : { ratingKey: m.ratingKey }),
+          server.sections(),
+        ]);
+        lastTemplate = template;
+        const opts = template.SubscriptionTemplate?.[0]?.MediaSubscription || template.MediaSubscription || [];
+        for (const o of opts) {
+          const libs = librariesFor(o, sections);
+          const lib = libs[defaultLibrary(o, libs)];
+          if (lib) choices.push(['Record: ' + (o.title || 'this programme') + '  →  ' + lib.title, () => recordQuick(o, lib, m, row)]);
+        }
+      } catch (e) {
+        choices.push(['Recording unavailable (' + String(e.message).slice(0, 60) + ')', () => banner(row)]);
       }
-      case 'back': case 'menu': view = closeMenu(); return true;
-      default: return true;
     }
+    choices.push([isFavourite(row) ? 'Remove from favourites' : 'Add to favourites', () => toggleFavourite(row)]);
+    choices.push(['Back to guide', () => stopWatching()]);
+    if (view !== 'playing' || playingRow !== row) return;
+    banner(row);
+    window.__easyplexMenuChoice = i => { const c = choices[i]; if (c) c[1](); };
+    v.showMenu(channelLabel(row.name || row.channel) + (m ? '  ·  ' + titleOf(m) : ''), JSON.stringify(choices.map(c => c[0])));
+  }
+  async function recordQuick(opt, lib, m, row) {
+    banner(row, 'Scheduling ' + titleOf(m) + '…');
+    const r = await scheduleRecording(opt, lib, m);
+    if (playingRow === row) banner(row, r.ok ? '● ' + (opt.title || 'Recording') + ' scheduled  →  ' + lib.title : 'Not scheduled: ' + r.error);
   }
 
   function dialogKey(action) {
@@ -1313,17 +1464,32 @@ export function LiveTvScreen() {
     const v = native();
     if (!v) throw new Error('Native player unavailable');
     window.__easyplexLivePlayError = (msg) => {
-      if (view !== 'playing') return;
+      if (view !== 'playing' || !playingRow) return;
+      const failedRow = playingRow;
       const stalled = String(msg).indexOf('NATIVE_STALL') !== -1;
-      const text = stalled ? 'No video after 8s — this channel may not decode on this box.' : 'Playback failed: ' + msg;
-      setText(details, text);
-      setText(info, 'Live TV · playback error · Back to close');
+      stopWatching();
+      const i = channelRows.indexOf(failedRow);
+      const next = channelRows.length > 1 ? channelRows[(i + 1) % channelRows.length] : null;
+      showOptions({
+        eyebrow: 'PLAYBACK PROBLEM',
+        title: channelLabel(failedRow.name || failedRow.channel),
+        subtitle: stalled ? 'No picture arrived within 8 seconds. This channel may use a format this box can’t decode.'
+          : 'The stream stopped: ' + String(msg).slice(0, 120),
+        focus: 0,
+        items: [
+          { label: 'Try again', run: () => tuneRow(failedRow) },
+          next && { label: 'Watch next channel  (' + channelLabel(next.name || next.channel) + ')', run: () => tuneRow(next) },
+          { label: 'Back to guide', run: () => {} },
+        ],
+      });
     };
     stopPlexSession();
     v.open(url);
     if (playingRow && playingRow !== row) lastRow = playingRow;
     playingRow = row;
     view = 'playing';
+    closeOptions();
+    prefSet(LAST_KEY, chanKey(row));
     gridIndex = Math.max(0, channelRows.indexOf(row));
     setText(info, 'Live TV · ' + row.channel + ' · Back to close');
     banner(row);
@@ -1477,12 +1643,20 @@ export function LiveTvScreen() {
 
   // ---- keys -------------------------------------------------------------------
 
+  // Leaving the app stops live TV (the native side has already closed the video).
+  function onLifecycle(e) { if (e.detail === 'stop' && view === 'playing') stopWatching(); }
+  window.addEventListener('easyplex:lifecycle', onLifecycle);
+
   load();
   return {
     el, name: 'livetv', onShow() { ambience.restore(); },
     onKey(action) {
-      if (view === 'menu') return menu ? menuKey(action) : true;
       if (action === 'menu' && (view === 'grid' || view === 'guide')) { openMenu(); return true; }
+      if (view === 'grid' || view === 'playing') {
+        if (/^digit\d$/.test(action)) { numberKey(action.slice(5)); return true; }
+        if (digits && action === 'enter') { commitDigits(); return true; }
+        if (digits && action === 'back') { cancelDigits(); return true; }
+      }
       if (view === 'playing') {
         switch (action) {
           case 'up': case 'pageup': zap(1); return true;
@@ -1492,6 +1666,7 @@ export function LiveTvScreen() {
             else banner(playingRow, 'No previous channel');
             return true;
           case 'enter': case 'info': banner(zapTarget || playingRow); return true;
+          case 'menu': openLiveMenu(); return true;
           case 'back': case 'stop': stopWatching(); return true;
           default: return true;
         }
@@ -1559,6 +1734,8 @@ export function LiveTvScreen() {
     },
     destroy() {
       alive = false;
+      window.removeEventListener('easyplex:lifecycle', onLifecycle);
+      clearTimeout(digitTimer);
       clearTimeout(zapTimer);
       clearInterval(clockTimer);
       clearTimeout(sayTimer);

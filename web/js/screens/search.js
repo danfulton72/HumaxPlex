@@ -3,7 +3,7 @@
 import { h, setText, setTransform } from '../util/dom.js';
 import { Row } from '../ui/row.js';
 import { session } from '../session.js';
-import { openItem, playItem } from '../nav.js';
+import { openItem, playItem, itemOptions } from '../nav.js';
 import { error } from '../util/log.js';
 import * as icons from '../ui/icons.js';
 import { useAmbience } from '../ui/backdrop.js';
@@ -115,6 +115,7 @@ export function SearchScreen() {
         case 'down': if (rowIndex < rows.length - 1) { rowIndex++; render(); } return true;
         case 'enter': row.select(); return true;
         case 'play': case 'playpause': if (row.current()) playItem(row.current()); return true;
+        case 'menu': itemOptions(row.current()); return true;
         case 'back': focusInput(); return true;
       }
       return false;

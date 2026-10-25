@@ -110,3 +110,19 @@
 .hx-when-time { font: 700 26px var(--display); white-space: nowrap; }
 .hx-sched-prog { position: static; flex: 1; min-width: 0; justify-content: center; }
 .hx-cancel { width: 860px; }
+
+/* Shared options list and toast (ui/options.js), used on every screen. */
+.ep-options { z-index: 50; }
+.ep-options .hx-dlg { width: 760px; }
+.ep-options-title { font-size: 44px; }
+.ep-options-note { float: right; font-weight: 500; opacity: .6; }
+.ep-toast { position: absolute; left: 50%; bottom: 70px; z-index: 60; transform: translate(-50%, 20px);
+  padding: 16px 30px; border-radius: 14px; background: #2B3142; color: #FFF7E6; font: 600 24px var(--body);
+  box-shadow: 0 8px 30px rgba(0,0,0,.5); opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; }
+.ep-toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* Channel number entry (0-9) in the guide. */
+.hx-digits { position: absolute; top: 40px; right: 80px; z-index: 30; display: flex; gap: 22px; align-items: baseline;
+  padding: 18px 30px; border-radius: 18px; background: #2B3142; color: #FFF7E6; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+.hx-digits b { font: 700 64px/1 var(--display); color: var(--coral); }
+.hx-digits span { font: 600 26px var(--body); max-width: 620px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

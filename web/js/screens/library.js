@@ -1,12 +1,13 @@
 // A whole library as a virtualized poster grid, loaded page by page.
-// Yellow cycles the sort; CH▲/CH▼ jump by letter (title sort) or by page.
+// Hold OK (or Yellow) for sort and filter; CH▲/CH▼ jump by letter (title sort) or by page.
 import { h, setText } from '../util/dom.js';
 import { Grid } from '../ui/grid.js';
 import { useAmbience } from '../ui/backdrop.js';
 import { session } from '../session.js';
 import { prefetch } from '../ui/images.js';
 import { isFast } from '../input.js';
-import { openItem, playItem } from '../nav.js';
+import { openItem, playItem, itemOptions } from '../nav.js';
+import { showOptions } from '../ui/options.js';
 import { error } from '../util/log.js';
 import { metaLine } from '../util/format.js';
 
@@ -28,9 +29,11 @@ export function LibraryScreen(section) {
   const focusInfo = h('div', 'lib-focus', el);
   const alphaRail = h('div', 'ep-alpha', el);
   const hint = h('div', 'lib-hint', el);
-  hint.innerHTML = '<i class="key-yellow"></i> Sort &nbsp;&nbsp; CH ▲▼ Jump';
+  hint.innerHTML = 'Hold OK&nbsp; Options &nbsp;&nbsp;·&nbsp;&nbsp; <i class="key-yellow"></i> Sort &nbsp;&nbsp;·&nbsp;&nbsp; CH ▲▼ Jump';
 
+  let grid = null;           // assigned below; the Grid reports focus while it is being built
   let sortIndex = 0;
+  let unwatchedOnly = false;
   let pages = new Map();     // page -> 'loading' | true
   let items = [];
   let letters = [];          // [{ title: 'A', start: 0 }]
@@ -38,6 +41,7 @@ export function LibraryScreen(section) {
   let alphaMode = false;
   let alphaIndex = 0;
   function paintAlpha() {
+    if (!grid) return;
     alphaRail.innerHTML = '';
     alphaRail.style.display = letters.length ? '' : 'none';
     letters.forEach((l, i) => {
@@ -55,13 +59,15 @@ export function LibraryScreen(section) {
   }
 
   const type = section.type === 'show' ? 2 : 1;
+  // Shows count as unwatched while any episode is unwatched.
+  const filter = () => (unwatchedOnly ? (type === 2 ? { unwatchedLeaves: 1 } : { unwatched: 1 }) : {});
 
-  const grid = new Grid({
+  grid = new Grid({
     top: 200, height: 880, total: 0,
     getItem: i => items[i],
     onFocus: (item, index) => {
       // Warm posters for the row just past the recycled pool.
-      if (!isFast()) {
+      if (grid && !isFast()) {
         const start = (Math.floor(index / grid.cols) + grid.poolRows - 1) * grid.cols;
         for (let i = start; i < start + grid.cols; i++) {
           if (items[i]) prefetch(session.server.image(items[i].thumb, 216, 324));
@@ -80,17 +86,17 @@ export function LibraryScreen(section) {
 
   async function loadPage(p) {
     if (pages.has(p)) return;
-    if (grid.total && p * PAGE >= grid.total) return;
+    if (grid && grid.total && p * PAGE >= grid.total) return;
     pages.set(p, 'loading');
     const gen = generation;
     try {
-      const res = await session.server.items(section.key, p * PAGE, PAGE, { sort: SORTS[sortIndex].id, type });
+      const res = await session.server.items(section.key, p * PAGE, PAGE, { sort: SORTS[sortIndex].id, type, filter: filter() });
       if (gen !== generation) return;
       res.items.forEach((it, i) => { items[p * PAGE + i] = it; });
       pages.set(p, true);
       if (grid.total !== res.total) {
         grid.setTotal(res.total);
-        setText(count, res.total + (section.type === 'show' ? ' shows' : ' movies'));
+        setText(count, res.total + (unwatchedOnly ? ' unwatched' : '') + (section.type === 'show' ? ' shows' : ' movies'));
       } else {
         grid.refresh();
       }
@@ -105,7 +111,7 @@ export function LibraryScreen(section) {
     letters = [];
     if (SORTS[sortIndex].id !== 'titleSort') return;
     try {
-      const mc = await session.server.get('/library/sections/' + section.key + '/firstCharacter', { type });
+      const mc = await session.server.get('/library/sections/' + section.key + '/firstCharacter', { type, ...filter() });
       let start = 0;
       letters = (mc.Directory || []).map(d => {
         const l = { title: d.title, start };
@@ -122,7 +128,8 @@ export function LibraryScreen(section) {
     alphaRail.style.display = 'none';
     pages = new Map();
     items = [];
-    setText(sortEl, 'Sorted by ' + SORTS[sortIndex].label);
+    setText(sortEl, 'Sorted by ' + SORTS[sortIndex].label + (unwatchedOnly ? '  ·  Unwatched only' : ''));
+    setText(count, '');
     grid.total = 0;
     grid.index = 0;
     grid.refresh();
@@ -130,6 +137,31 @@ export function LibraryScreen(section) {
     loadLetters();
   }
   reload();
+
+  function openAlpha() {
+    if (!letters.length) return;
+    alphaMode = true;
+    const i = letters.findIndex((l, k) => grid.index >= l.start &&
+      (k === letters.length - 1 || grid.index < letters[k + 1].start));
+    alphaIndex = Math.max(0, i);
+    paintAlpha();
+  }
+
+  function openMenu() {
+    const cur = grid.current();
+    showOptions({
+      title: section.title,
+      subtitle: cur ? 'Focused: ' + cur.title : '',
+      focus: 0,
+      items: [
+        cur && { label: 'Options for “' + cur.title + '”…', run: () => itemOptions(cur, { onChanged: reload }) },
+        ...SORTS.map((srt, i) => ({ label: 'Sort by ' + srt.label, checked: i === sortIndex,
+          run: () => { if (i !== sortIndex) { sortIndex = i; reload(); } } })),
+        { label: unwatchedOnly ? 'Show everything' : 'Show unwatched only', run: () => { unwatchedOnly = !unwatchedOnly; reload(); } },
+        letters.length && { label: 'Jump to letter…', run: openAlpha },
+      ],
+    });
+  }
 
   function jump(dir) {
     if (letters.length) {
@@ -164,11 +196,7 @@ export function LibraryScreen(section) {
         return true;
       }
       if (action === 'right' && letters.length && grid.index % grid.cols === grid.cols - 1) {
-        alphaMode = true;
-        const i = letters.findIndex((l,k) => grid.index >= l.start &&
-          (k === letters.length - 1 || grid.index < letters[k+1].start));
-        alphaIndex = Math.max(0, i);
-        paintAlpha();
+        openAlpha();
         return true;
       }
       switch (action) {
@@ -181,6 +209,7 @@ export function LibraryScreen(section) {
         case 'enter': grid.select(); return true;
         case 'play': case 'playpause': if (grid.current()) playItem(grid.current()); return true;
         case 'yellow': sortIndex = (sortIndex + 1) % SORTS.length; reload(); return true;
+        case 'menu': openMenu(); return true;
         case 'back':
           if (grid.index > grid.cols * 2) { grid.focusIndex(0); return true; }
           return false;

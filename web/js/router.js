@@ -4,6 +4,7 @@
 // A screen is { el, onKey(action) -> bool?, onShow?(), onHide?(), destroy?() }.
 import { setHandler } from './input.js';
 import { exitApp } from './platform/device.js';
+import { optionsOpen, optionsKey, toast } from './ui/options.js';
 
 const stack = [];
 let root = null;
@@ -13,6 +14,7 @@ export function init(container, onGlobalKey) {
   root = container;
   globalKey = onGlobalKey;
   setHandler(action => {
+    if (optionsOpen()) { optionsKey(action); return; }
     const top = stack[stack.length - 1];
     if (top && top.onKey && top.onKey(action) === true) return;
     if (globalKey && globalKey(action) === true) return;
@@ -56,9 +58,14 @@ function destroy(screen) {
   if (screen.el.parentNode) screen.el.parentNode.removeChild(screen.el);
 }
 
+// Back on the first screen leaves the app, but only on a second press so a
+// stray Back doesn't drop the viewer out of the app.
+let exitArmedAt = 0;
 export function back() {
   if (stack.length <= 1) {
-    exitApp();
+    if (Date.now() - exitArmedAt < 2500) { exitArmedAt = 0; exitApp(); return; }
+    exitArmedAt = Date.now();
+    toast('Press Back again to exit', 2500);
     return;
   }
   destroy(stack.pop());

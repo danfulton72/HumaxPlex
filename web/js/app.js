@@ -4,14 +4,18 @@ import * as router from './router.js';
 import { inject } from './input.js';
 import { session, reconnect, signOut } from './session.js';
 import { HomeScreen } from './screens/home.js';
+import { LiveTvScreen } from './screens/livetv.js';
 import { LoginScreen } from './screens/login.js';
 import { initHud } from './ui/hud.js';
 import { log, warn } from './util/log.js';
 import * as nav from './nav.js';
 import * as store from './util/store.js';
 
+// Home is always at the bottom of the stack so Back from Live TV returns to it.
 function goHome() {
   router.reset(HomeScreen());
+  const start = store.get('startScreen', 'home');
+  if (start === 'guide' || start === 'channel') router.push(LiveTvScreen({ autoplay: start === 'channel' }));
 }
 
 function goLogin() {
@@ -91,6 +95,9 @@ export function boot() {
   router.init(document.getElementById('app'));
   initHud(() => (router.top() && router.top().name) || '');
   window.addEventListener('easyplex:restart', start);
+  // Native shell: the app was hidden ('stop') or shown again ('start').
+  window.__easyplexLifecycle = state =>
+    window.dispatchEvent(new CustomEvent('easyplex:lifecycle', { detail: state }));
   start();
   if (splash) {
     setTimeout(() => {

@@ -78,7 +78,15 @@ export function PlayerScreen(initial, { offset = null } = {}) {
 
   const panel = h('div', 'tracks hidden', el);
   const upnext = h('div', 'upnext hidden', el);
-  const errorEl = h('div', 'player-error hidden', el);
+  // Failed playback: what went wrong and what to try next.
+  const errorEl = h('div', 'hx-dialog ep-fail hidden', el);
+  const errorBox = h('div', 'hx-dlg hx-menu', errorEl);
+  h('div', 'hx-dlg-eyebrow', errorBox).textContent = 'PLAYBACK PROBLEM';
+  const errorTitle = h('h2', 'hx-dlg-title', errorBox);
+  const errorMsg = h('div', 'hx-dlg-sub', errorBox);
+  const errorList = h('div', 'hx-menu-list', errorBox);
+  h('div', 'hx-dlg-hint', errorBox).textContent = '▲▼ choose · OK select · Back to leave';
+  let errorItems = [], errorIndex = 0;
 
   let item = initial;
   let media = null;
@@ -134,6 +142,12 @@ export function PlayerScreen(initial, { offset = null } = {}) {
 
   // --- OSD --------------------------------------------------------------
 
+  function endsAt(ms) {
+    const ends = new Date(Date.now() + Math.max(0, duration - ms));
+    const pad = n => (n < 10 ? '0' : '') + n;
+    return pad(ends.getHours()) + ':' + pad(ends.getMinutes());
+  }
+
   function renderProgress(ms) {
     const p = duration ? Math.max(0, Math.min(1, ms / duration)) : 0;
     setTransform(barFill, 'scaleX(' + p.toFixed(4) + ')');
@@ -143,24 +157,41 @@ export function PlayerScreen(initial, { offset = null } = {}) {
       lastText = now;
       setText(tNow, clock(ms));
       setText(tLeft, '−' + clock(duration - ms));
-      const ends = new Date(now + (duration - ms));
-      let hh = ends.getHours();
-      const ampm = hh >= 12 ? 'PM' : 'AM';
-      hh = hh % 12 || 12;
-      const mm = ends.getMinutes();
-      setText(tInfo, 'Ends at ' + hh + ':' + (mm < 10 ? '0' : '') + mm + ' ' + ampm);
+      setText(tInfo, 'Ends at ' + endsAt(ms));
+      pushHud(false);
     }
+  }
+
+  // The native player hides this page while video plays, so mirror the OSD
+  // onto its progress bar: title, times, seek preview, paused state.
+  const nativeHud = () => (typeof EasyPlexVideo !== 'undefined' && EasyPlexVideo.setHud ? EasyPlexVideo : null);
+  function hudTitle() {
+    return item.type === 'episode' ? item.grandparentTitle + '  ·  ' + episodeLabel(item) + '  ' + item.title :
+      item.title + (item.year ? '  (' + item.year + ')' : '');
+  }
+  function pushHud(show) {
+    const n = nativeHud();
+    if (!n || !started) return;
+    const ms = seekTarget != null ? seekTarget : position;
+    const p = duration ? Math.round(Math.max(0, Math.min(1, ms / duration)) * 1000) : -1;
+    const line = (seekTarget != null ? 'Seek to ' + clock(seekTarget) + '  ·  ' : '') +
+      (paused && seekTarget == null ? 'Paused  ·  ' : '') +
+      clock(ms) + ' / ' + clock(duration) + '  ·  Ends ' + endsAt(ms);
+    n.setHud(hudTitle(), line, p, !!show, paused || seekTarget != null);
   }
 
   function showOsd(sticky) {
     toggleClass(el, 'osd-on', true);
     clearTimeout(osdTimer);
     if (!sticky && !paused) osdTimer = setTimeout(() => toggleClass(el, 'osd-on', false), OSD_HIDE_MS);
+    pushHud(true);
   }
 
   function hideOsd() {
     clearTimeout(osdTimer);
     toggleClass(el, 'osd-on', false);
+    const n = nativeHud();
+    if (n && n.hideHud) n.hideHud();
   }
 
   function renderTitles() {
@@ -245,6 +276,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
     log('playing after ' + (Date.now() - t0) + 'ms (' + mode + ')');
     report('playing');
     startTimeline();
+    pushHud(true);
   }
 
   // Map Plex's chosen streams onto the player's track list (same file order).
@@ -326,8 +358,62 @@ export function PlayerScreen(initial, { offset = null } = {}) {
     }
     error('playback failed', msg);
     toggleClass(spinner, 'on', false);
+    started = false;
+    // Take the native video down so this page (and the choices) can be seen.
+    try { player.close(); } catch (e) { /* already closed */ }
+    showFailure(msg);
+  }
+
+  function friendly(msg) {
+    const m = String(msg || '');
+    if (/NATIVE_STALL|no video/i.test(m)) return 'The video started but no picture arrived. The file may use a format this box can\'t decode.';
+    if (/HTTP 4\d\d|401|403/.test(m)) return 'Plex refused the request (' + m.replace(/^.*?(HTTP \d+).*$/, '$1') + ').';
+    if (/HTTP 5\d\d|refused to convert|transcode/i.test(m)) return 'Plex couldn\'t prepare this video for streaming.';
+    if (/network|timeout|ENOTFOUND|Failed to fetch|IO_/i.test(m)) return 'The connection to the Plex server dropped.';
+    return 'Something went wrong while playing.';
+  }
+
+  function showFailure(msg) {
+    setText(errorTitle, item.type === 'episode' ? item.grandparentTitle + '  ·  ' + episodeLabel(item) : (item.title || 'This video'));
+    setText(errorMsg, friendly(msg) + '  (' + String(msg || 'unknown error').slice(0, 120) + ')');
+    errorItems = [
+      { label: 'Try again', run: () => retry(null) },
+      { label: 'Try again at lower quality (720p)', run: () => retry({ bitrate: 4000, resolution: '1280x720' }) },
+      { label: 'Back', run: () => exit() },
+    ];
+    errorIndex = 0;
+    renderFailure();
     errorEl.classList.remove('hidden');
-    setText(errorEl, 'Playback failed: ' + msg);
+    hideOsd();
+  }
+
+  function renderFailure() {
+    errorList.textContent = '';
+    errorItems.forEach((it, i) => {
+      h('div', 'hx-btn hx-menu-item' + (i === errorIndex ? ' focus' : ''), errorList).textContent = it.label;
+    });
+  }
+
+  function retry(quality) {
+    errorEl.classList.add('hidden');
+    triedFallback = !!quality;           // a lower-quality retry is already a transcode
+    nativeQuality = quality;
+    mode = quality ? 'hls' : decideMode();
+    if (!media) { start(); return; }
+    open(position).catch(e => failed(e.message || String(e)));
+  }
+
+  function failureKey(action) {
+    if (action === 'up') { errorIndex = Math.max(0, errorIndex - 1); renderFailure(); }
+    else if (action === 'down') { errorIndex = Math.min(errorItems.length - 1, errorIndex + 1); renderFailure(); }
+    else if (action === 'enter') errorItems[errorIndex].run();
+    else if (action === 'back' || action === 'stop') exit();
+    return true;
+  }
+
+  // Leaving the app pauses playback (and tells Plex).
+  function onLifecycle(e) {
+    if (e.detail === 'stop' && started && !paused) togglePause();
   }
 
   // --- Controls ---------------------------------------------------------
@@ -345,6 +431,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
     }
     toggleClass(el, 'paused', paused);
     report(paused ? 'paused' : 'playing');
+    pushHud(true);
   }
 
   function seekBy(dir) {
@@ -519,6 +606,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
     document.documentElement.classList.remove('playing');
     setScreenSaver(true);
     document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('easyplex:lifecycle', onLifecycle);
   }
 
   function onVisibility() {
@@ -537,10 +625,12 @@ export function PlayerScreen(initial, { offset = null } = {}) {
       document.documentElement.classList.add('playing');
       setScreenSaver(false);
       document.addEventListener('visibilitychange', onVisibility);
+      window.addEventListener('easyplex:lifecycle', onLifecycle);
       renderTitles();
       if (!started) start();
     },
     onKey(action) {
+      if (!errorEl.classList.contains('hidden')) return failureKey(action);
       if (!upnext.classList.contains('hidden')) {
         if (action === 'enter') { playNext(); return true; }
         if (action === 'back' || action === 'stop') { exit(); return true; }
