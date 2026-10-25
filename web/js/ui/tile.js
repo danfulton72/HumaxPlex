@@ -3,7 +3,7 @@
 import { h, setText, show, setTransform, toggleClass } from '../util/dom.js';
 import { load } from './images.js';
 import { session } from '../session.js';
-import { progress, episodeLabel } from '../util/format.js';
+import { progress, episodeLabel, mediaDuration } from '../util/format.js';
 import { imageUrl } from '../xtream/api.js';
 
 export const KINDS = {
@@ -97,6 +97,6 @@ export function fillTile(tile, item) {
 
   if (tile.cap) {
     setText(tile.cap, kind === 'episode' ? item.title : titleFor(item, kind));
-    setText(tile.sub, kind === 'episode' ? episodeLabel(item) + (item.duration ? '  ·  ' + Math.round(item.duration / 60000) + 'm' : '') : subFor(item, kind));
+    setText(tile.sub, kind === 'episode' ? episodeLabel(item) + (mediaDuration(item) ? '  ·  ' + Math.round(mediaDuration(item) / 60000) + 'm' : '') : subFor(item, kind));
   }
 }
