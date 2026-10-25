@@ -5,6 +5,7 @@ import { h, setText, toggleClass } from '../util/dom.js';
 import { session } from '../session.js';
 import { useAmbience } from '../ui/backdrop.js';
 import { toast } from '../ui/options.js';
+import { showKeyboard, hideKeyboard } from '../platform/device.js';
 import * as router from '../router.js';
 import { VodProfilesScreen } from './vodprofiles.js';
 import {
@@ -84,7 +85,7 @@ export function VodSetupScreen({ onSaved } = {}) {
 
   function edit(it) {
     editing = it;
-    it.input.focus();
+    showKeyboard(it.input);
     if (it.input.setSelectionRange) {
       const n = it.input.value.length;
       try { it.input.setSelectionRange(n, n); } catch (e) { /* type=url/password */ }
@@ -92,7 +93,7 @@ export function VodSetupScreen({ onSaved } = {}) {
   }
   function stopEditing(advance) {
     if (!editing) return;
-    editing.input.blur();
+    hideKeyboard(editing.input);
     editing = null;
     if (advance) index = Math.min(items.length - 1, index + 1);
     render();

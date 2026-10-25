@@ -46,6 +46,21 @@ export function deviceInfo() {
   return cached;
 }
 
+// Raise the on-screen keyboard for a text field. Remote keys reach the page as
+// actions from the native shell, so input.focus() alone never counts as the
+// user selecting the field and Android keeps the keyboard down.
+export function showKeyboard(input) {
+  if (input) input.focus();
+  const n = native();
+  if (n && typeof n.showKeyboard === 'function') setTimeout(() => n.showKeyboard(), 60);
+}
+
+export function hideKeyboard(input) {
+  if (input) input.blur();
+  const n = native();
+  if (n && typeof n.hideKeyboard === 'function') n.hideKeyboard();
+}
+
 // Transcode targets stay at 1080p-friendly defaults; the native player asks
 // for higher quality explicitly through the quality menu.
 export function supports4K() {

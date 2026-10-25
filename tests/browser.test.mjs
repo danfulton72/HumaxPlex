@@ -34,7 +34,7 @@ after(async () => {
 
 // The Android bridge, recording calls. Values mimic a Dangbei DBOX02.
 const NATIVE = `
-window.__calls = { open: [], hud: [], pause: 0, play: 0, close: 0, exit: 0 };
+window.__calls = { open: [], hud: [], pause: 0, play: 0, close: 0, exit: 0, keyboard: 0, keyboardHidden: 0 };
 window.EasyPlexVideo = {
   deviceInfo: () => JSON.stringify({ manufacturer: 'Dangbei', model: 'DBOX02', release: '11', appVersion: '0.3.1' }),
   exit() { __calls.exit++; }, imageFailed() {},
@@ -42,6 +42,7 @@ window.EasyPlexVideo = {
   play() { __calls.play++; }, pause() { __calls.pause++; }, seek() {},
   setHud(t, line, p, show, sticky) { __calls.hud.push({ t, line, p, show, sticky }); },
   hideHud() {},
+  showKeyboard() { __calls.keyboard++; }, hideKeyboard() { __calls.keyboardHidden++; },
 };`;
 const SIGNED_IN = `
 localStorage.setItem('ss.token', JSON.stringify('t'));
@@ -257,7 +258,12 @@ test('Dispatcharr VOD: set up in Settings, browse, details, play, resume', async
   assert.match(await text('.vod-setup-status'), /from your Plex Live TV tuner/);
 
   // Wrong password first: nothing saved, a clear message.
-  await key('down'); await key('enter'); await page.keyboard.type('dan'); await key('enter');
+  await key('down'); await key('enter', 200);
+  // OK on a field asks the box for its on-screen keyboard.
+  assert.equal(await page.evaluate(() => window.__calls.keyboard), 1);
+  assert.equal(await page.evaluate(() => document.activeElement.className), 'vod-input');
+  await page.keyboard.type('dan'); await key('enter');
+  assert.ok(await page.evaluate(() => window.__calls.keyboardHidden) >= 1);
   await key('enter'); await page.keyboard.type('nope'); await key('enter');
   await key('enter', 800);
   assert.match(await text('.vod-setup-status'), /username or password was not accepted/);
