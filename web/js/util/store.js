@@ -16,3 +16,13 @@ export function set(key, value) {
     else localStorage.setItem(PREFIX + key, JSON.stringify(value));
   } catch (e) { /* quota */ }
 }
+
+// Plain string values under their own keys (no prefix, no JSON), for settings
+// saved that way by earlier versions (Live TV favourites, last channel…).
+export function getRaw(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+
+export function setRaw(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* quota or blocked */ }
+}

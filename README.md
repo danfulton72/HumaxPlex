@@ -12,7 +12,9 @@ with Plex, Humax, Dangbei or Google.
 | Path | What it is |
 | --- | --- |
 | `web/` | The user interface (HTML, CSS and JavaScript), packaged into the APK as-is |
-| `web/js/screens/livetv.js`, `web/css/livetv.css` | Live TV guide, recording and channel zapping |
+| `web/js/screens/livetv.js` + `livetv/` | Live TV: a small coordinator plus modules for channels, guide, day guide, recordings, recording, playback and diagnostics; pure helpers in `livetv/helpers.js` |
+| `web/css/livetv.css` | Live TV, options lists and dialogs |
+| `tests/` | Lint, unit, Live TV and browser tests (see BUILDING.md) |
 | `android/` | The Android shell: WebView, Media3 video player and remote-key handling |
 | `scripts/make_tv_banner.py` | Generates the Android TV launcher banner from the app icon |
 
