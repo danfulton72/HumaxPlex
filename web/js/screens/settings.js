@@ -13,6 +13,7 @@ import * as store from '../util/store.js';
 import { showOptions, toast } from '../ui/options.js';
 import { VodSetupScreen } from './vodsetup.js';
 import { loadConfig as vodConfig } from '../xtream/api.js';
+import { config as sponsorConfig, saveConfig as saveSponsor, CATEGORIES } from '../player/sponsorblock.js';
 
 const START_LABELS = { home: 'Home', guide: 'Live TV guide', channel: 'Live TV: last channel' };
 
@@ -76,6 +77,12 @@ export function SettingsScreen() {
       { label: 'Unlink Plex account', value: 'Sign out', run: doSignOut },
       { label: 'Start screen', value: START_LABELS[store.get('startScreen', 'home')] || 'Home', run: chooseStart },
       isAdmin() ? {
+        label: 'YouTube SponsorBlock', value: sponsorConfig().enabled ? 'On' : 'Off', run: sponsorSettings,
+      } : {
+        label: 'YouTube SponsorBlock', value: sponsorConfig().enabled ? 'On · admin managed' : 'Off · admin managed',
+        run: () => toast('Switch to the Plex admin profile to configure SponsorBlock'),
+      },
+      isAdmin() ? {
         label: 'Dispatcharr VOD', value: vodConfig() ? vodConfig().username + ' @ ' + vodConfig().server.replace(/^https?:\/\//, '') : 'Not set up',
         run: () => router.push(VodSetupScreen({ onSaved: build })),
       } : {
@@ -89,6 +96,54 @@ export function SettingsScreen() {
       h('span', 'setting-value', it.el).textContent = it.value + (it.action ? '  ·  ' + it.action : '');
     });
     render();
+  }
+
+  async function sponsorSettings() {
+    const c = sponsorConfig();
+    showOptions({
+      title: 'YouTube SponsorBlock', subtitle: 'Only for the chosen Plex library',
+      items: [
+        { label: 'Automatic skipping', checked: c.enabled, run: () => {
+          c.enabled = !c.enabled; saveSponsor(c); build(); sponsorSettings();
+        } },
+        { label: 'Tube Archivist address', run: () => {
+          const value = window.prompt('Tube Archivist URL (http://IP:port)', c.server);
+          if (value == null) return;
+          try {
+            const url = new URL(value.trim());
+            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
+              throw new Error('Invalid URL');
+            c.server = url.origin + url.pathname.replace(/\\/$/, '');
+            saveSponsor(c); sponsorSettings();
+          } catch (e) { toast('Enter a valid http:// or https:// URL'); }
+        } },
+        { label: 'Tube Archivist API token', run: () => {
+          const value = window.prompt('Tube Archivist API token (leave blank to keep current)', '');
+          if (value == null) return;
+          if (value.trim()) { c.token = value.trim(); saveSponsor(c); }
+          sponsorSettings();
+        } },
+        { label: 'Plex YouTube library', run: async () => {
+          try {
+            const sections = await session.server.sections();
+            showOptions({
+              title: 'Select YouTube library', subtitle: 'SponsorBlock will only run here',
+              items: sections.map(section => ({
+                label: section.title, checked: String(section.key) === c.sectionId,
+                run: () => { c.sectionId = String(section.key); saveSponsor(c); build(); sponsorSettings(); },
+              })),
+            });
+          } catch (e) { toast('Could not load Plex libraries'); }
+        } },
+        ...CATEGORIES.map(([id, label]) => ({
+          label, checked: c.categories.includes(id),
+          run: () => {
+            c.categories = c.categories.includes(id) ? c.categories.filter(x => x !== id) : [...c.categories, id];
+            saveSponsor(c); sponsorSettings();
+          },
+        })),
+      ],
+    });
   }
 
   function chooseStart() {
