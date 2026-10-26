@@ -266,6 +266,54 @@ public final class MainActivity extends Activity {
         }
     }
     public final class NativeVideoBridge {
+        // Read Tube Archivist metadata off the UI thread. Only the app's own
+        // bundled JavaScript can access this bridge; no tokens enter URLs.
+        @JavascriptInterface public void fetchSponsor(String endpoint, String token, String requestId) {
+            new Thread(() -> {
+                int status = 500;
+                String response = "";
+                HttpURLConnection conn = null;
+                try {
+                    URL url = new URL(endpoint);
+                    String scheme = url.getProtocol();
+                    if (!("http".equals(scheme) || "https".equals(scheme)) ||
+                        !url.getPath().matches("/api/video/[A-Za-z0-9_-]{11}/sponsor/")) {
+                        throw new IllegalArgumentException("Invalid SponsorBlock endpoint");
+                    }
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(7000);
+                    conn.setReadTimeout(7000);
+                    conn.setInstanceFollowRedirects(false); // never send a token to a redirect
+                    conn.setRequestProperty("Authorization", "Token " + token);
+                    status = conn.getResponseCode();
+                    if (status == 200) {
+                        try (InputStream in = conn.getInputStream();
+                             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                            byte[] bytes = new byte[4096];
+                            int n;
+                            while ((n = in.read(bytes)) >= 0) {
+                                if (out.size() + n > 1024 * 1024) throw new java.io.IOException("Response too large");
+                                out.write(bytes, 0, n);
+                            }
+                            response = out.toString("UTF-8");
+                        }
+                    }
+                } catch (Exception e) {
+                    android.util.Log.w("EasyPlex", "SponsorBlock request failed: " + e.getClass().getSimpleName());
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+                final int resultStatus = status;
+                final String resultBody = response;
+                runOnUiThread(() -> {
+                    if (web != null) web.evaluateJavascript(
+                        "window.__easyplexSponsorCallbacks && window.__easyplexSponsorCallbacks[" +
+                        org.json.JSONObject.quote(requestId) + "] && window.__easyplexSponsorCallbacks[" +
+                        org.json.JSONObject.quote(requestId) + "](" + resultStatus + "," +
+                        org.json.JSONObject.quote(resultBody) + ")", null);
+                });
+            }).start();
+        }
         @JavascriptInterface public void imageFailed(String path) {
             runOnUiThread(() -> {
                 imageFailures++;
