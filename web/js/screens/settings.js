@@ -113,7 +113,7 @@ export function SettingsScreen() {
             const url = new URL(value.trim());
             if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
               throw new Error('Invalid URL');
-            c.server = url.origin + url.pathname.replace(/\\/$/, '');
+            c.server = url.origin + url.pathname.replace(/\/$/, '');
             saveSponsor(c); sponsorSettings();
           } catch (e) { toast('Enter a valid http:// or https:// URL'); }
         } },
