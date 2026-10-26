@@ -77,17 +77,17 @@ export function SettingsScreen() {
       { label: 'Unlink Plex account', value: 'Sign out', run: doSignOut },
       { label: 'Start screen', value: START_LABELS[store.get('startScreen', 'home')] || 'Home', run: chooseStart },
       isAdmin() ? {
-        label: 'YouTube SponsorBlock', value: sponsorConfig().enabled ? 'On' : 'Off', run: sponsorSettings,
-      } : {
-        label: 'YouTube SponsorBlock', value: sponsorConfig().enabled ? 'On · admin managed' : 'Off · admin managed',
-        run: () => toast('Switch to the Plex admin profile to configure SponsorBlock'),
-      },
-      isAdmin() ? {
         label: 'Dispatcharr VOD', value: vodConfig() ? vodConfig().username + ' @ ' + vodConfig().server.replace(/^https?:\/\//, '') : 'Not set up',
         run: () => router.push(VodSetupScreen({ onSaved: build })),
       } : {
         label: 'Dispatcharr VOD', value: 'Managed by the Plex admin',
         run: () => toast('Switch to the Plex admin profile to change VOD settings'),
+      },
+      isAdmin() ? {
+        label: 'YouTube SponsorBlock', value: sponsorConfig().enabled ? 'On' : 'Off', run: sponsorSettings,
+      } : {
+        label: 'YouTube SponsorBlock', value: sponsorConfig().enabled ? 'On · admin managed' : 'Off · admin managed',
+        run: () => toast('Switch to the Plex admin profile to configure SponsorBlock'),
       },
     ];
     items.forEach(it => {
