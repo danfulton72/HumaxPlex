@@ -144,6 +144,35 @@ seeking, HUD and failure screen as Plex films. Where you stopped is remembered
 on the box for each Plex profile (Continue watching), not in Plex. The Xtream password is stored on
 the box in the app's own storage, as the Plex sign-in is.
 
+## YouTube SponsorBlock (Tube Archivist)
+
+EasyPlex can automatically skip Tube Archivist's SponsorBlock segments in a dedicated
+Plex YouTube library. This is optional and **off by default**. Source files are
+never modified.
+
+1. Enable SponsorBlock in Tube Archivist and confirm the video files have a
+   bracketed 11-character YouTube ID before the extension
+   (for example `My Video [dQw4w9WgXcQ].mkv`).
+2. In EasyPlex sign in as the Plex Home admin and open
+   **Settings → YouTube SponsorBlock**.
+3. Enter the Tube Archivist server URL (reachable from the TV), the Tube
+   Archivist API token from Tube Archivist's settings, and select the
+   matching Plex library.
+4. Select categories and enable automatic skipping.
+
+The app requests `GET /api/video/<youtube-id>/sponsor/` with Tube Archivist's
+`Authorization: Token` header. On Android the native bridge makes this
+request (to avoid WebView CORS issues); in the browser preview, the server
+must allow cross-origin requests. The token is kept locally in EasyPlex
+settings, like Dispatcharr VOD credentials; don't expose it publicly.
+For cleartext HTTP servers the token travels unencrypted on the network:
+prefer HTTPS, or use HTTP only on a trusted LAN.
+
+Library scoping is enforced by Plex's `librarySectionID`; playback in all
+other libraries is unaffected. If a video has no matching filename/segment
+data or the API is unreachable, it plays normally. Direct-play seeks use
+Media3 seeking; HLS seeks restart the Plex transcode at the target position.
+
 ## Licence
 
 EasyPlex is free software under the GNU GPL v3; see [LICENSE](LICENSE) and
