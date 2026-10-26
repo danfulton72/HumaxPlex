@@ -14,6 +14,7 @@ import { log, warn, error } from '../util/log.js';
 import { request } from '../plex/client.js';
 import { parseSubtitles, CueTrack } from '../player/subtitles.js';
 import { setLastPlayed } from '../util/lastplayed.js';
+import { segmentsFor, skipTarget } from '../player/sponsorblock.js';
 
 // What Android TV boxes reliably decode natively with Media3. No DTS.
 // av1 is NOT listed here: it's only direct-played when the box reports a decoder
@@ -127,6 +128,9 @@ export function PlayerScreen(initial, { offset = null } = {}) {
   let cueTimer = 0;
   let cueFor = null;
   const playSession = uuid();
+  let sponsorSegments = [];
+  const skippedSegments = new Set();
+  let autoSkipping = false;
 
   const player = createPlayer(stage, {
     onTime(ms) {
@@ -138,6 +142,15 @@ export function PlayerScreen(initial, { offset = null } = {}) {
       if (duration > 0 && pos > duration) pos = duration;
       position = pos;
       if (seekTarget == null) renderProgress(position);
+      if (started && !paused && !autoSkipping && seekTarget == null && sponsorSegments.length) {
+        const skip = skipTarget(sponsorSegments, position, duration, skippedSegments);
+        if (skip && skip.target > position + 300) {
+          skippedSegments.add(skip.index);
+          autoSkipping = true;
+          jumpTo(skip.target).catch(e => warn('SponsorBlock skip failed', e.message))
+            .finally(() => { autoSkipping = false; });
+        }
+      }
     },
     onBuffering(on) { toggleClass(spinner, 'on', on); },
     onEnd() { finished(); },
@@ -353,6 +366,9 @@ export function PlayerScreen(initial, { offset = null } = {}) {
       mode = decideMode();
       if (offset == null) offset = item.viewOffset || 0;
       position = offset;
+      // Metadata lookup must never prevent video playback.
+      segmentsFor(item, part).then(segments => { if (alive) sponsorSegments = segments; })
+        .catch(e => warn('SponsorBlock lookup failed', e.message));
       renderProgress(position);
       showOsd();
       await open(offset);
@@ -465,6 +481,15 @@ export function PlayerScreen(initial, { offset = null } = {}) {
     seekTimer = setTimeout(commitSeek, SEEK_COMMIT_MS);
   }
 
+  async function jumpTo(target) {
+    position = target;
+    if (mode === 'direct') {
+      await player.seek(target);
+    } else {
+      await open(target);
+    }
+  }
+
   async function commitSeek() {
     clearTimeout(seekTimer);
     if (seekTarget == null) return;
@@ -473,14 +498,16 @@ export function PlayerScreen(initial, { offset = null } = {}) {
     toggleClass(el, 'seeking', false);
     showOsd();
     position = target;
+    // Rewinding into a segment should allow the user to watch it again.
+    if (target < duration) sponsorSegments.forEach((s, i) => { if (target <= s.start) skippedSegments.delete(i); });
     try {
       if (mode === 'direct') {
         toggleClass(spinner, 'on', true);
-        await player.seek(target);
+        await jumpTo(target);
         toggleClass(spinner, 'on', false);
         if (paused) togglePause();
       } else {
-        await open(target);
+        await jumpTo(target);
       }
     } catch (e) {
       warn('seek failed, reopening', e.message);
