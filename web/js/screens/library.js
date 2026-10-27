@@ -128,10 +128,10 @@ export function LibraryScreen(section) {
       recentRow.setItems(recs);
       recentRow.el.style.display = '';
       layoutGrid(true);
-      // Land on the rail first so the freshest additions are what you see.
-      zone = 'recent';
+      // Keep focus on the grid (the main content); the rail is reached by
+      // pressing Up from the grid's top row. Stealing focus here would fight
+      // whatever the user was doing and break keyboard expectations.
       syncZone();
-      recentRow.focusIndex(0);
     } catch (e) { error('recently added failed', section.title, e); }
   }
 
