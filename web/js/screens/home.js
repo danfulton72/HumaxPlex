@@ -197,11 +197,12 @@ export function HomeScreen() {
     } else {
       track.innerHTML = '';
       rows = hubs.map(hb => {
-        // Continue/On Deck are wide; the cross-library Recently Added TV row
-        // holds episodes (16:9 tiles); everything else is a poster row.
+        // Continue/On Deck are wide; show-type rows (TV shows, YouTube, and the
+        // per-library "Recent <lib>" rows) hold episodes (16:9 tiles); everything
+        // else is a poster row.
         let kind = 'poster';
         if (/continue|ondeck/i.test(hb.hubIdentifier)) kind = 'wide';
-        else if (hb.hubIdentifier === 'home.television.recent') kind = 'episode';
+        else if (hb.type === 'show') kind = 'episode';
         const row = new Row({
           title: hb.title, kind, items: hb.Metadata,
           onFocus: onFocusItem, onSelect: item => openItem(item),
@@ -227,11 +228,15 @@ export function HomeScreen() {
     const server = session.server;
     loadedAt = Date.now();
     try {
-      const [sections, hubs, recent] = await Promise.all([server.sections(), server.hubs(), server.recentHubs(12)]);
+      // Sections first (recent rows are per-library), then hubs + recents in parallel.
+      const sections = await server.sections();
       buildNav(sections);
-      // Cross-library Recently Added rows sit just under the standard hubs.
-      setHubs(hubs.concat(recent));
-      store.set('homeCache', { server: server.id, sections, hubs: hubs.map(slimHub), recent: recent.map(slimHub) });
+      const [hubs, recent] = await Promise.all([server.hubs(), server.recentByLibrary(sections, { limit: 12 })]);
+      // Drop the generic cross-library "Recently Added" hubs — they're replaced
+      // by the per-library "Recent <lib>" rows below.
+      const stdHubs = hubs.filter(h => h.hubIdentifier !== 'home.movies.recent' && h.hubIdentifier !== 'home.television.recent');
+      setHubs(stdHubs.concat(recent));
+      store.set('homeCache', { server: server.id, sections, hubs: stdHubs.map(slimHub), recent: recent.map(slimHub) });
     } catch (e) {
       error('home load failed', e);
       if (!rows.length) setText(empty, 'Couldn\'t load from ' + server.name + '. Press OK to retry.');

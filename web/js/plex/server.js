@@ -3,6 +3,28 @@ import { request, withQuery, identity } from './client.js';
 
 const SUPPORTED_HUB_TYPES = { movie: 1, show: 1, episode: 1, season: 1, mixed: 1, clip: 1 };
 
+// Shared "recently added" filter: drop in-progress items, cap at one item per
+// creator (channel/show for shows, studio/director for movies), trim to limit.
+// An empty creator key never hides an item — it only groups when there's a
+// creator to group by. Returns up to `limit` items.
+function _dedupeRecent(items, watching, limit, isShow) {
+  const seenKeys = new Set(watching.map(m => m.ratingKey));
+  const seenCreators = new Set();
+  const out = [];
+  for (const it of items) {
+    if (seenKeys.has(it.ratingKey)) continue;
+    const creator = isShow
+      ? (it.grandparentTitle || '')
+      : (it.studio || ((it.Director && it.Director[0] && it.Director[0].tag) || it.title || ''));
+    if (creator && seenCreators.has(creator)) continue;
+    seenKeys.add(it.ratingKey);
+    if (creator) seenCreators.add(creator);
+    out.push(it);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 export class Server {
   constructor({ uri, token, name, id }) {
     this.uri = uri;
@@ -102,27 +124,41 @@ export class Server {
   // so a freshly added series surfaces its newest episodes, not just the show.
   // Trimmed to `limit`, deduped against in-progress items, and capped at one
   // item per creator (channel/show for shows, studio/director for movies) so a
-  // single prolific source doesn't fill the whole row.
-  async recentItems(sectionId, { type, limit = 12, isShow = false } = {}) {
-    const [res, watching] = await Promise.all([
+  // single prolific source doesn't fill the whole row. Pass `watching` (the
+  // onDeck list) to reuse it across many sections instead of refetching.
+  async recentItems(sectionId, { type, limit = 12, isShow = false, watching } = {}) {
+    const [res, deck] = await Promise.all([
       this.items(sectionId, 0, limit * 3, { sort: 'addedAt:desc', type }),
-      this.onDeck(),
+      watching || this.onDeck(),
     ]);
-    const seenKeys = new Set(watching.map(m => m.ratingKey));
-    const seenCreators = new Set();
+    return _dedupeRecent(res.items, deck, limit, isShow);
+  }
+
+  // One "Recently Added" row PER library for the Home screen (Option B, revised):
+  // each movie/show section contributes a row titled "Recent <library>", holding
+  // that library's newest items (one per creator, deduped vs in-progress).
+  // Libraries with nothing new are omitted. Fetches onDeck once up front.
+  async recentByLibrary(sections, { limit = 12 } = {}) {
+    const watching = await this.onDeck();
+    const results = await Promise.all(sections.map(async s => {
+      const isShow = s.type === 'show';
+      const recType = isShow ? 4 : 1; // 4 = episode, 1 = movie
+      try {
+        const res = await this.items(s.key, 0, limit * 3, { sort: 'addedAt:desc', type: recType });
+        return { section: s, items: res.items };
+      } catch (e) { return { section: s, items: [] }; }
+    }));
     const out = [];
-    for (const it of res.items) {
-      if (seenKeys.has(it.ratingKey)) continue;
-      const creator = isShow
-        ? (it.grandparentTitle || '')
-        : (it.studio || ((it.Director && it.Director[0] && it.Director[0].tag) || it.title || ''));
-      // Only dedupe when there IS a creator to group by; an empty key means
-      // "no grouping info" and the item always shows (never hidden by accident).
-      if (creator && seenCreators.has(creator)) continue;
-      seenKeys.add(it.ratingKey);
-      if (creator) seenCreators.add(creator);
-      out.push(it);
-      if (out.length >= limit) break;
+    for (const { section, items } of results) {
+      const meta = _dedupeRecent(items, watching, limit, section.type === 'show');
+      if (!meta.length) continue;
+      out.push({
+        hubIdentifier: 'lib.recent.' + section.key,
+        title: 'Recent ' + section.title,
+        type: section.type,
+        Metadata: meta,
+        size: meta.length,
+      });
     }
     return out;
   }
