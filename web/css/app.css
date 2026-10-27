@@ -144,6 +144,10 @@ html.playing .ambience { display: none; }
 .nav-icon { width: 52px; padding: 0; }
 .nav-icon svg { width: 28px; height: 28px; display: block; }
 .nav-sep { width: 2px; height: 28px; margin: 0 14px 0 8px; border-radius: 1px; background: rgba(255, 247, 230, 0.18); }
+/* Library reordering: the picked-up item lifts and glows; the track tints so
+   it's obvious you're in "move" mode. */
+.nav-item.dragging { background: var(--coral); color: #fff; transform: translateY(-6px) scale(1.06); box-shadow: 0 8px 24px rgba(0,0,0,0.45); transition: transform 160ms var(--ease), background 160ms var(--ease); }
+.nav.reordering .nav-track { filter: saturate(0.85); }
 .topbar-who { margin-left: auto; flex-shrink: 0; font: 500 22px var(--body); color: var(--dim); white-space: nowrap; }
 
 /* ---------- home ---------- */

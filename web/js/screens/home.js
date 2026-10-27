@@ -10,6 +10,7 @@ import * as store from '../util/store.js';
 import * as router from '../router.js';
 import * as icons from '../ui/icons.js';
 import { openItem, playItem, openLibrary, openSearch, openSettings, itemOptions } from '../nav.js';
+import { toast } from '../ui/options.js';
 import { LiveTvScreen } from './livetv.js';
 import { VodScreen } from './vod.js';
 import { isConfigured as vodConfigured } from '../xtream/api.js';
@@ -26,6 +27,20 @@ import { error, log } from '../util/log.js';
 
 const ROWS_TOP = 600;
 const NAV_PAD = 80; // wider than the 64px edge fade in app.css
+const NAV_ORDER_KEY = 'navOrder';   // user's preferred library order (array of section keys)
+
+// Apply a saved order (array of section keys) to a sections array. Keys not in
+// the saved list keep their original relative order and sort after the known
+// ones, so newly added libraries still appear. Returns a new array.
+function orderedSections(sections, order) {
+  if (!Array.isArray(order) || !order.length) return sections;
+  const rank = new Map(order.map((k, i) => [k, i]));
+  return [...sections].sort((a, b) => {
+    const ra = rank.has(a.key) ? rank.get(a.key) : Infinity;
+    const rb = rank.has(b.key) ? rank.get(b.key) : Infinity;
+    return ra - rb; // stable: equal ranks (both unknown) keep original order
+  });
+}
 
 function slimHub(hub) {
   // Keep the cache small: only fields the home screen renders.
@@ -95,7 +110,12 @@ export function HomeScreen() {
 
   let navSections = [];
   let navHasVod = false;
+  // Library reordering: hold Select on a library to pick it up, move left/right
+  // to slide it, Select again to place (saves), Back to cancel.
+  let reorderMode = false;
+  let dragIndex = -1;
   function buildNav(sections) {
+    // Callers pass already-ordered sections (see load()); this just renders them.
     navSections = sections;
     navHasVod = vodVisible();
     const was = navItems && navItems[navIndex];
@@ -140,8 +160,65 @@ export function HomeScreen() {
     navItems.forEach((n, i) => {
       toggleClass(n.el, 'focus', zone === 'nav' && i === navIndex);
       toggleClass(n.el, 'current', n.id === 'home');
+      toggleClass(n.el, 'dragging', reorderMode && i === dragIndex);
     });
     toggleClass(el, 'in-nav', zone === 'nav');
+    toggleClass(navEl, 'reordering', reorderMode);
+  }
+
+  // --- Library reordering -------------------------------------------------
+  // Hold Select on a library to pick it up; left/right slides it; Select places
+  // it (saving the new order); Back cancels. Only the section items are movable
+  // — Home, Live TV, VOD, Search and Settings stay pinned at their ends.
+  function firstSectionIdx() { return navItems.findIndex(n => n.id === 'section'); }
+  function lastSectionIdx() { let i = -1; navItems.forEach((n, k) => { if (n.id === 'section') i = k; }); return i; }
+
+  function startReorder() {
+    const cur = navItems[navIndex];
+    if (!cur || cur.id !== 'section') return false;   // only libraries are draggable
+    reorderMode = true;
+    dragIndex = navIndex;
+    renderNav();
+    toast('Move “' + cur.label + '” · OK to place · Back to cancel', 4000);
+    return true;
+  }
+
+  // Physically slide the dragged item to a new position in both the array and
+  // the DOM so the user sees it move live.
+  function moveDrag(dir) {
+    const target = Math.max(firstSectionIdx(), Math.min(lastSectionIdx(), dragIndex + dir));
+    if (target === dragIndex) return;
+    const [moved] = navItems.splice(dragIndex, 1);
+    navItems.splice(target, 0, moved);
+    // Re-insert its element at the matching DOM position.
+    const prev = navItems[target - 1];
+    if (prev) navTrack.insertBefore(moved.el, prev.el.nextSibling);
+    else navTrack.appendChild(moved.el);
+    dragIndex = target;
+    navIndex = target;
+    renderNav();
+  }
+
+  function commitReorder() {
+    // Persist the section keys in their current (possibly rearranged) order.
+    const order = navItems.filter(n => n.id === 'section').map(n => n.section.key);
+    store.set(NAV_ORDER_KEY, order);
+    endReorder();
+    toast('Library order saved', 2500);
+  }
+
+  function endReorder() {
+    reorderMode = false;
+    dragIndex = -1;
+    renderNav();
+  }
+
+  function cancelReorder() {
+    // Rebuild from the saved order to discard the in-progress move.
+    endReorder();
+    buildNav(navSections);
+    navIndex = Math.min(navIndex, navItems.length - 1);
+    renderNav();
   }
 
   function showHero(item) {
@@ -229,7 +306,10 @@ export function HomeScreen() {
     loadedAt = Date.now();
     try {
       // Sections first (recent rows are per-library), then hubs + recents in parallel.
-      const sections = await server.sections();
+      // Order the libraries by the user's saved preference so BOTH the nav bar
+      // and the "Recent <lib>" rows below follow the same order.
+      const rawSections = await server.sections();
+      const sections = orderedSections(rawSections, store.get(NAV_ORDER_KEY, []));
       buildNav(sections);
       const [hubs, recent] = await Promise.all([server.hubs(), server.recentByLibrary(sections, { limit: 12 })]);
       // Drop the generic cross-library "Recently Added" hubs — they're replaced
@@ -274,12 +354,20 @@ export function HomeScreen() {
     },
     onKey(action) {
       if (zone === 'nav') {
+        if (reorderMode) {
+          // Dragging a library: slide it, place it, or cancel.
+          if (action === 'left') { moveDrag(-1); return true; }
+          if (action === 'right') { moveDrag(1); return true; }
+          if (action === 'enter' || action === 'menu') { commitReorder(); return true; }
+          if (action === 'back' || action === 'up') { cancelReorder(); return true; }
+          return true;   // swallow everything else while reordering
+        }
         if (action === 'left') { navIndex = Math.max(0, navIndex - 1); renderNav(); return true; }
         if (action === 'right') { navIndex = Math.min(navItems.length - 1, navIndex + 1); renderNav(); return true; }
         if (action === 'down' && rows.length) { zone = 'rows'; renderNav(); renderRows(); return true; }
         if (action === 'enter') { activateNav(navItems[navIndex]); return true; }
+        if (action === 'menu') { startReorder(); return true; }   // hold Select on a library
         if (action === 'back') return false;
-        if (action === 'menu') return true;
         return true;
       }
       const row = rows[rowIndex];
