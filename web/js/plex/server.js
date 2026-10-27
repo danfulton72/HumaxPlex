@@ -55,6 +55,54 @@ export class Server {
     return (mc.Hub || []).filter(h => h.size > 0 && SUPPORTED_HUB_TYPES[h.type] && h.Metadata);
   }
 
+  // Cross-library "Recently Added" rows for Home (Option B): Plex's own
+  // home.movies.recent / home.television.recent hubs, trimmed to RECENT_LIMIT
+  // and with anything already in Continue Watching removed so an item doesn't
+  // appear twice. Returns [] when neither hub is present.
+  async recentHubs(limit = 12) {
+    const mc = await this.get('/hubs', { count: 24, includeExternalMedia: 0 });
+    const watching = new Set((await this.onDeck()).map(m => m.ratingKey));
+    const out = [];
+    for (const h of (mc.Hub || [])) {
+      if (h.hubIdentifier !== 'home.movies.recent' && h.hubIdentifier !== 'home.television.recent') continue;
+      const meta = (h.Metadata || []).filter(m => !watching.has(m.ratingKey)).slice(0, limit);
+      if (meta.length) out.push({ ...h, Metadata: meta, size: meta.length });
+    }
+    return out;
+  }
+
+  // In-progress items (Continue Watching / On Deck) across the whole server,
+  // used to keep Recently Added from duplicating something you're mid-way through.
+  async onDeck() {
+    const mc = await this.get('/hubs', { count: 24, includeExternalMedia: 0 });
+    const keys = ['home.continue', 'home.ondeck'];
+    const out = [];
+    for (const h of (mc.Hub || [])) {
+      if (!keys.includes(h.hubIdentifier)) continue;
+      for (const m of (h.Metadata || [])) out.push(m);
+    }
+    return out;
+  }
+
+  // Recently added items within ONE section (Option A). Shows use type=episode
+  // so a freshly added series surfaces its newest episodes, not just the show.
+  // Trimmed to `limit` and deduped against in-progress items.
+  async recentItems(sectionId, { type, limit = 12 } = {}) {
+    const [res, watching] = await Promise.all([
+      this.items(sectionId, 0, limit * 2, { sort: 'addedAt:desc', type }),
+      this.onDeck(),
+    ]);
+    const seen = new Set(watching.map(m => m.ratingKey));
+    const out = [];
+    for (const it of res.items) {
+      if (seen.has(it.ratingKey)) continue;
+      seen.add(it.ratingKey);
+      out.push(it);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
   async sectionHubs(sectionId) {
     const mc = await this.get('/hubs/sections/' + sectionId, { count: 24 });
     return (mc.Hub || []).filter(h => h.size > 0 && SUPPORTED_HUB_TYPES[h.type] && h.Metadata);

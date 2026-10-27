@@ -197,9 +197,13 @@ export function HomeScreen() {
     } else {
       track.innerHTML = '';
       rows = hubs.map(hb => {
-        const wide = /continue|ondeck/i.test(hb.hubIdentifier);
+        // Continue/On Deck are wide; the cross-library Recently Added TV row
+        // holds episodes (16:9 tiles); everything else is a poster row.
+        let kind = 'poster';
+        if (/continue|ondeck/i.test(hb.hubIdentifier)) kind = 'wide';
+        else if (hb.hubIdentifier === 'home.television.recent') kind = 'episode';
         const row = new Row({
-          title: hb.title, kind: wide ? 'wide' : 'poster', items: hb.Metadata,
+          title: hb.title, kind, items: hb.Metadata,
           onFocus: onFocusItem, onSelect: item => openItem(item),
         });
         row.hubId = hb.hubIdentifier;
@@ -223,10 +227,11 @@ export function HomeScreen() {
     const server = session.server;
     loadedAt = Date.now();
     try {
-      const [sections, hubs] = await Promise.all([server.sections(), server.hubs()]);
+      const [sections, hubs, recent] = await Promise.all([server.sections(), server.hubs(), server.recentHubs(12)]);
       buildNav(sections);
-      setHubs(hubs);
-      store.set('homeCache', { server: server.id, sections, hubs: hubs.map(slimHub) });
+      // Cross-library Recently Added rows sit just under the standard hubs.
+      setHubs(hubs.concat(recent));
+      store.set('homeCache', { server: server.id, sections, hubs: hubs.map(slimHub), recent: recent.map(slimHub) });
     } catch (e) {
       error('home load failed', e);
       if (!rows.length) setText(empty, 'Couldn\'t load from ' + server.name + '. Press OK to retry.');
@@ -236,7 +241,7 @@ export function HomeScreen() {
   const cached = store.get('homeCache');
   if (cached && session.server && cached.server === session.server.id) {
     buildNav(cached.sections || []);
-    setHubs(cached.hubs || []);
+    setHubs((cached.hubs || []).concat(cached.recent || []));
   } else {
     buildNav([]);
   }
