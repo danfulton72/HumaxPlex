@@ -366,7 +366,7 @@ export function HomeScreen() {
       // Horror!" — is dropped so Home stays clean.
       const stdHubs = hubs.filter(h => h.hubIdentifier === 'home.continue' || h.hubIdentifier === 'home.ondeck');
       setHubs(stdHubs.concat(recent));
-      store.set('homeCache', { v: HOME_CACHE_V, server: server.id, profile, sections: hubs: stdHubs.map(slimHub), recent: recent.map(slimHub) });
+      store.set('homeCache', { v: HOME_CACHE_V, server: server.id, profile, sections, hubs: stdHubs.map(slimHub), recent: recent.map(slimHub) });
     } catch (e) {
       error('home load failed', e);
       if (!rows.length) setText(empty, 'Couldn\'t load from ' + server.name + '. Press OK to retry.');
