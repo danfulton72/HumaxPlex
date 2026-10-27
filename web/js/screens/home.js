@@ -381,7 +381,10 @@ export function HomeScreen() {
   // (e.g. one still holding "Recently Added Videos") is discarded, not flashed.
   if (cached && session.server && cached.server === session.server.id && cached.profile === profileKey() && cached.v === HOME_CACHE_V) {
     allSections = cached.sections || [];
-    buildNav(cached.sections || []);
+    // Cached sections may predate a visibility or order change; apply this
+    // profile's current preferences before the first paint.
+    const orderedCached = orderedSections(cached.sections || [], store.get(orderKey(), []));
+    buildNav(orderedCached.filter(s => !hiddenKeys.has(s.key)));
     setHubs((cached.hubs || []).concat(cached.recent || []));
   } else {
     buildNav([]);
