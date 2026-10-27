@@ -107,6 +107,35 @@ export function useAmbience(initial) {
   };
 }
 
+// Keep a handful of loaded hero images alive so returning to a previously
+// focused film avoids another loader allocation and browser image decode.
+const HERO_CACHE_MAX = 6;
+const heroCache = new Map();
+function heroImage(url, ready) {
+  let entry = heroCache.get(url);
+  if (entry) {
+    heroCache.delete(url);
+    heroCache.set(url, entry);
+    if (entry.done) ready();
+    else entry.waiters.push(ready);
+    return;
+  }
+  entry = { image: new Image(), done: false, waiters: [ready] };
+  heroCache.set(url, entry);
+  entry.image.onload = () => {
+    entry.done = true;
+    const callbacks = entry.waiters.splice(0);
+    callbacks.forEach(fn => fn());
+  };
+  entry.image.onerror = () => {
+    heroCache.delete(url);
+    entry.waiters.length = 0;
+    if (typeof EasyPlexVideo !== 'undefined') EasyPlexVideo.imageFailed(url.split('?')[0]);
+  };
+  entry.image.src = url;
+  if (heroCache.size > HERO_CACHE_MAX) heroCache.delete(heroCache.keys().next().value);
+}
+
 export class HeroArt {
   constructor(parent, className) {
     this.el = h('div', className || 'hero-art', parent);
@@ -126,8 +155,6 @@ export class HeroArt {
       return;
     }
     const back = this.imgs[1 - this.front];
-    const loader = new Image();
-    loader.src = url;
     const swap = () => {
       if (token !== this.token) return;
       back.src = url;
@@ -135,7 +162,6 @@ export class HeroArt {
       this.imgs[this.front].classList.remove('on');
       this.front = 1 - this.front;
     };
-    loader.onload = swap;
-    loader.onerror = () => { if (typeof EasyPlexVideo !== 'undefined') EasyPlexVideo.imageFailed(url.split('?')[0]); };
+    heroImage(url, swap);
   }
 }
