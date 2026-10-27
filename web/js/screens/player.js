@@ -145,6 +145,7 @@ export function PlayerScreen(initial, { offset = null } = {}) {
       if (started && !paused && !autoSkipping && seekTarget == null && sponsorSegments.length) {
         const skip = skipTarget(sponsorSegments, position, duration, skippedSegments);
         if (skip && skip.target > position + 300) {
+          console.log('[SB] SKIP firing: pos=' + Math.round(position / 1000) + 's -> target=' + Math.round(skip.target / 1000) + 's (segment ' + skip.index + ')');
           skippedSegments.add(skip.index);
           autoSkipping = true;
           jumpTo(skip.target).catch(e => warn('SponsorBlock skip failed', e.message))

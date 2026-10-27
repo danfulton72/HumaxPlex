@@ -80,12 +80,17 @@ function nativeRequest(url, token) {
 export async function segmentsFor(item, part) {
   const c = config();
   if (!c.enabled || !c.server || !c.token || !c.sectionId ||
-      String(item.librarySectionID) !== c.sectionId) return [];
+      String(item.librarySectionID) !== c.sectionId) {
+    console.log('[SB] skip lookup: enabled=' + c.enabled + ' server=' + c.server + ' token=' + (!!c.token) + ' sectionId=' + c.sectionId + ' itemSection=' + (item && item.librarySectionID));
+    return [];
+  }
   const id = youtubeId(part && part.file);
-  if (!id) return [];
+  if (!id) { console.log('[SB] no youtube id in file=' + (part && part.file)); return []; }
   const key = c.server + '/' + id + '/' + c.categories.join(',');
-  if (cache.has(key)) return cache.get(key);
+  if (cache.has(key)) { console.log('[SB] cache hit ' + id); return cache.get(key); }
+  console.log('[SB] fetching ' + c.server + '/api/video/' + id + '/');
   const result = normalizeSegments(await nativeRequest(c.server + '/api/video/' + id + '/', c.token), c.categories);
   cache.set(key, result);
+  console.log('[SB] got ' + result.length + ' skippable segment(s) for ' + id);
   return result;
 }
