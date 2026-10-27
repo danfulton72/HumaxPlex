@@ -76,9 +76,11 @@ function start() {
     return;
   }
   if (session.token && session.server) {
+    console.warn('[BOOT] start() -> authenticated, goHome + verify');
     goHome();
     verify();
   } else {
+    console.warn('[BOOT] start() -> NOT authenticated, goLogin');
     goLogin();
   }
 }
@@ -86,8 +88,10 @@ function start() {
 export function boot() {
   if (DEV) window.__ss = { router, session, nav };
   log('boot', VERSION, navigator.userAgent);
+  console.warn('[BOOT] boot() entered');
   window.__androidAction = inject;
   fitWindow();
+  console.warn('[BOOT] fitWindow -> inner=' + innerWidth + 'x' + innerHeight + ' screen=' + screen.width + 'x' + screen.height + ' dpr=' + devicePixelRatio);
   // Reveal the splash only now that the canvas is scaled — before this it is
   // opacity:0 so the logo never flashes oversized/low-res on first paint.
   const splash = document.getElementById('splash');
@@ -97,8 +101,10 @@ export function boot() {
   initHud(() => (router.top() && router.top().name) || '');
   window.addEventListener('easyplex:restart', start);
   // Native shell: the app was hidden ('stop') or shown again ('start').
-  window.__easyplexLifecycle = state =>
+  window.__easyplexLifecycle = state => {
+    console.warn('[LIFE-JS] received lifecycle state=' + state);
     window.dispatchEvent(new CustomEvent('easyplex:lifecycle', { detail: state }));
+  };
   start();
   if (splash) {
     setTimeout(() => {

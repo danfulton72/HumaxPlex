@@ -216,6 +216,7 @@ export function HomeScreen() {
     if (!reportedPaint && rows.length) {
       reportedPaint = true;
       log('home rows ready at ' + Math.round(performance.now()) + 'ms after page start');
+      console.warn('[BOOT] home rows ready, rows=' + rows.length);
     }
   }
 

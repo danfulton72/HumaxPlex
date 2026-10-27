@@ -76,6 +76,7 @@ public final class MainActivity extends Activity {
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        android.util.Log.w("EPLX-DBG", "[LIFE] onCreate");
         getWindow().getDecorView().setSystemUiVisibility(5894 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         web = new WebView(this);
         web.setBackgroundColor(0xff0b0d12);
@@ -139,6 +140,15 @@ public final class MainActivity extends Activity {
                     }
                 }
                 return loader.shouldInterceptRequest(uri);
+            }
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                android.util.Log.w("EPLX-DBG", "[WEB] onPageStarted " + url);
+            }
+            @Override public void onPageFinished(WebView view, String url) {
+                android.util.Log.w("EPLX-DBG", "[WEB] onPageFinished " + url);
+            }
+            @Override public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                android.util.Log.w("EPLX-DBG", "[WEB] onReceivedError code=" + errorCode + " desc=" + description + " url=" + failingUrl);
             }
         });
         web.setWebChromeClient(new WebChromeClient());
@@ -585,7 +595,7 @@ public final class MainActivity extends Activity {
             });
         }
         // Back on the home screen leaves the app.
-        @JavascriptInterface public void exit() { runOnUiThread(() -> finish()); }
+        @JavascriptInterface public void exit() { android.util.Log.w("EPLX-DBG", "[BRIDGE] exit() called -> finish()"); runOnUiThread(() -> finish()); }
         // Marks the current stream as live TV and shows a now/next banner over it.
         // progress is 0-1000 through the current programme, or -1 to hide the bar.
         @JavascriptInterface public void setLiveBanner(String text, int progress) {
@@ -845,6 +855,7 @@ public final class MainActivity extends Activity {
     // stops so the Dispatcharr stream is released. The web UI decides what
     // that means for its screens through window.__easyplexLifecycle.
     @Override protected void onStop() {
+        android.util.Log.w("EPLX-DBG", "[LIFE] onStop  (activity going to background)");
         if (nativePlayer != null) {
             if (liveMode) closeVideo();
             else nativePlayer.pause();
@@ -853,14 +864,17 @@ public final class MainActivity extends Activity {
         super.onStop();
     }
     @Override protected void onStart() {
+        android.util.Log.w("EPLX-DBG", "[LIFE] onStart");
         super.onStart();
         if (web != null) web.evaluateJavascript("window.__easyplexLifecycle && window.__easyplexLifecycle('start')", null);
     }
     @Override protected void onPause() {
+        android.util.Log.w("EPLX-DBG", "[LIFE] onPause");
         super.onPause();
         if (web != null) web.onPause();
     }
     @Override protected void onResume() {
+        android.util.Log.w("EPLX-DBG", "[LIFE] onResume (activity foregrounded)");
         super.onResume();
         if (web != null) web.onResume();
     }
@@ -877,6 +891,7 @@ public final class MainActivity extends Activity {
         else super.onBackPressed();
     }
     @Override protected void onDestroy() {
+        android.util.Log.w("EPLX-DBG", "[LIFE] onDestroy (activity being destroyed)");
         closeVideo();
         if (web != null) { web.destroy(); web = null; }
         super.onDestroy();
