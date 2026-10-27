@@ -103,7 +103,7 @@ async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true
     let body = {};
     if (p === '/identity') body = { MediaContainer: { machineIdentifier: 'm1' } };
     else if (p === '/library/sections') body = { MediaContainer: { Directory: [{ key: '1', title: 'Films', type: 'movie' }] } };
-    else if (p === '/hubs') body = { MediaContainer: { Hub: [{ hubIdentifier: 'movie.recent', title: 'Recently Added', type: 'movie', size: 1, Metadata: [MOVIE] }] } };
+    else if (p === '/hubs') body = { MediaContainer: { Hub: [{ hubIdentifier: 'home.continue', title: 'Recently Added', type: 'movie', size: 1, Metadata: [MOVIE] }] } };
     else if (p === '/library/sections/1/all') body = { MediaContainer: { totalSize: 1, size: 1, Metadata: [MOVIE] } };
     else if (p === '/library/sections/1/firstCharacter') body = { MediaContainer: { Directory: [{ title: 'T', size: 1 }] } };
     else if (SHOW[p]) body = { MediaContainer: { Metadata: SHOW[p] } };

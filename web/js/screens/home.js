@@ -35,6 +35,8 @@ const NAV_HIDDEN_BASE = 'navHidden'; // libraries hidden from nav + recents (fav
 // its own hidden set, so a kid's box can show only kids' libraries.
 const orderKey = () => NAV_ORDER_BASE + ':' + profileKey();
 const hiddenKey = () => NAV_HIDDEN_BASE + ':' + profileKey();
+// Bump when the cached Home shape changes so stale caches are discarded.
+const HOME_CACHE_V = 2;
 
 // Apply a saved order (array of section keys) to a sections array. Keys not in
 // the saved list keep their original relative order and sort after the known
@@ -353,11 +355,13 @@ export function HomeScreen() {
       const sections = ordered.filter(s => !hiddenKeys.has(s.key));
       buildNav(sections);
       const [hubs, recent] = await Promise.all([server.hubs(), server.recentByLibrary(sections, { limit: 12 })]);
-      // Drop the generic cross-library "Recently Added" hubs — they're replaced
-      // by the per-library "Recent <lib>" rows below.
-      const stdHubs = hubs.filter(h => h.hubIdentifier !== 'home.movies.recent' && h.hubIdentifier !== 'home.television.recent');
+      // Show only the two standard in-progress hubs on Home. Everything else Plex
+      // returns — cross-library "Recently Added" (replaced by the per-library rows
+      // below), "Recently Added Videos", and curated collections like "Oh, The
+      // Horror!" — is dropped so Home stays clean.
+      const stdHubs = hubs.filter(h => h.hubIdentifier === 'home.continue' || h.hubIdentifier === 'home.ondeck');
       setHubs(stdHubs.concat(recent));
-      store.set('homeCache', { server: server.id, sections, hubs: stdHubs.map(slimHub), recent: recent.map(slimHub) });
+      store.set('homeCache', { v: HOME_CACHE_V, server: server.id, sections, hubs: stdHubs.map(slimHub), recent: recent.map(slimHub) });
     } catch (e) {
       error('home load failed', e);
       if (!rows.length) setText(empty, 'Couldn\'t load from ' + server.name + '. Press OK to retry.');
@@ -368,7 +372,9 @@ export function HomeScreen() {
   // Load this profile's hidden set up front so the "More ▸" item renders even
   // on the instant cached paint (before load() refetches).
   hiddenKeys = new Set(store.get(hiddenKey(), []));
-  if (cached && session.server && cached.server === session.server.id) {
+  // Bump HOME_CACHE_V whenever the hub shape changes so an old cached Home
+  // (e.g. one still holding "Recently Added Videos") is discarded, not flashed.
+  if (cached && session.server && cached.server === session.server.id && cached.v === HOME_CACHE_V) {
     allSections = cached.sections || [];
     buildNav(cached.sections || []);
     setHubs((cached.hubs || []).concat(cached.recent || []));
