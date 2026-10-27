@@ -5,7 +5,12 @@ android {
     defaultConfig {
         applicationId 'io.github.danfulton72.easyplex'
         minSdk 28
-        targetSdk 28
+        // Target a modern SDK so Android 14 boxes treat us like current apps.
+        // At targetSdk 28 the system applied old-SDK task/foreground restrictions
+        // that caused the launcher to close our activity ~2s after launch on some
+        // boxes (e.g. D2426). compileSdk is already 35; 34 is a safe, well-supported
+        // target for Media3 1.4 / webkit 1.12.
+        targetSdk 34
         // GITHUB_RUN_NUMBER can exceed Integer.MAX_VALUE on high-volume repos, so
         // guard against overflow. versionCode must be a positive int <= 2^31-1.
         def runNumStr = System.getenv('GITHUB_RUN_NUMBER')
