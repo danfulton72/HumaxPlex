@@ -1,8 +1,10 @@
 // A whole library as a virtualized poster grid, loaded page by page.
-// Hold OK (or Yellow) for sort and filter; CH▲/CH▼ jump by letter (title sort) or by page.
+// The newest additions sit at the very top of the grid (as its first row(s)),
+// so they scroll away with the rest of the content rather than being pinned.
+// Hold OK (or Yellow) for sort and filter; CH▲/CH▼ jump by letter (title sort)
+// or by page.
 import { h, setText } from '../util/dom.js';
 import { Grid } from '../ui/grid.js';
-import { Row } from '../ui/row.js';
 import { useAmbience } from '../ui/backdrop.js';
 import { session } from '../session.js';
 import { prefetch } from '../ui/images.js';
@@ -14,14 +16,6 @@ import { metaLine } from '../util/format.js';
 
 const PAGE = 140;
 const RECENT_LIMIT = 12;
-// Vertical layout when the Recently Added rail is present: the rail sits just
-// under the header and the grid takes the space below it. Without the rail the
-// grid uses the full area (gridTop/gridHeight defaults).
-const GRID_TOP_DEFAULT = 200;
-const GRID_HEIGHT_DEFAULT = 880;
-const RECENT_ROW_TOP = 150;
-const GRID_TOP_WITH_RECENT = 590;
-const GRID_HEIGHT_WITH_RECENT = 490;
 const SORTS = [
   { id: 'titleSort', label: 'A–Z' },
   { id: 'addedAt:desc', label: 'Recently added' },
@@ -45,11 +39,20 @@ export function LibraryScreen(section) {
   let sortIndex = 0;
   let unwatchedOnly = false;
   let pages = new Map();     // page -> 'loading' | true
-  let items = [];
-  let letters = [];          // [{ title: 'A', start: 0 }]
+  let items = [];            // server items, indexed by SERVER position (0-based)
+  let recent = [];           // newest items, shown as the grid's leading row(s)
+  let serverTotal = 0;       // item count the server reported for the current sort
+  let letters = [];          // [{ title: 'A', start: 0 }] — server positions
   let generation = 0;
   let alphaMode = false;
   let alphaIndex = 0;
+
+  // Grid index <-> server index. The recent block occupies the first R slots;
+  // everything after it is a server item shifted down by R.
+  const R = () => recent.length;
+  const gridItem = g => (g < R() ? recent[g] : items[g - R()]);
+  const serverIndexOf = g => Math.max(0, g - R());
+
   function paintAlpha() {
     if (!grid) return;
     alphaRail.innerHTML = '';
@@ -57,14 +60,17 @@ export function LibraryScreen(section) {
     letters.forEach((l, i) => {
       const node = h('div', 'ep-alpha-letter', alphaRail);
       node.textContent = l.title;
+      // Letter starts are server positions; compare against the focused item's
+      // server position (only meaningful once past the recent block).
+      const sIdx = serverIndexOf(grid.index);
       node.classList.toggle('focus', alphaMode && i === alphaIndex);
-      node.classList.toggle('selected', grid.index >= l.start &&
-        (i === letters.length - 1 || grid.index < letters[i + 1].start));
+      node.classList.toggle('selected', sIdx >= l.start &&
+        (i === letters.length - 1 || sIdx < letters[i + 1].start));
     });
   }
   function chooseLetter() {
     if (!letters[alphaIndex]) return;
-    grid.focusIndex(letters[alphaIndex].start);
+    grid.focusIndex(R() + letters[alphaIndex].start);
     paintAlpha();
   }
 
@@ -74,70 +80,35 @@ export function LibraryScreen(section) {
 
   grid = new Grid({
     top: 200, height: 880, total: 0,
-    getItem: i => items[i],
+    getItem: gridItem,
     onFocus: (item, index) => {
       // Warm posters for the row just past the recycled pool.
       if (grid && !isFast()) {
         const start = (Math.floor(index / grid.cols) + grid.poolRows - 1) * grid.cols;
         for (let i = start; i < start + grid.cols; i++) {
-          if (items[i]) prefetch(session.server.image(items[i].thumb, 216, 324));
+          const it = gridItem(i);
+          if (it) prefetch(session.server.image(it.thumb, 216, 324));
         }
       }
       if (!item) { setText(focusInfo, ''); return; }
-      setText(focusInfo, item.title + '   ' + metaLine(item));
+      // Newest items get a small "new" cue in the focus line.
+      const tag = index < R() ? 'New · ' : '';
+      setText(focusInfo, tag + item.title + '   ' + metaLine(item));
       ambience.set(item.UltraBlurColors);
     },
     onSelect: item => openItem(item),
     onNeed: (start, end) => {
-      for (let p = Math.floor(start / PAGE); p <= Math.floor(end / PAGE); p++) loadPage(p);
+      // Convert the grid range to a server range, then load the covering pages.
+      const sStart = serverIndexOf(start);
+      const sEnd = serverIndexOf(end);
+      for (let p = Math.floor(sStart / PAGE); p <= Math.floor(sEnd / PAGE); p++) loadPage(p);
     },
   });
   el.appendChild(grid.el);
 
-  // Option A: a "Recently Added" rail above the grid (newest episodes for shows,
-  // newest movies otherwise), capped at RECENT_LIMIT and deduped against what's
-  // already in Continue Watching. Hidden entirely when there's nothing new.
-  const recentRow = new Row({
-    title: 'Recently added', kind: 'poster', items: [],
-    onFocus: item => { if (!item) return; setText(focusInfo, item.title + '   ' + metaLine(item)); ambience.set(item.UltraBlurColors); },
-    onSelect: item => openItem(item),
-  });
-  recentRow.el.style.top = RECENT_ROW_TOP + 'px';
-  recentRow.el.style.display = 'none';
-  el.appendChild(recentRow.el);
-  let zone = 'grid'; // 'recent' | 'grid'
-
-  // Only one focus ring shows at a time: the rail's or the grid's.
-  function syncZone() {
-    const onRail = zone === 'recent' && recentRow.el.style.display !== 'none';
-    recentRow.setActive(onRail);
-    grid.ring.classList.toggle('on', !onRail);
-  }
-
-  function layoutGrid(withRecent) {
-    grid.el.style.top = (withRecent ? GRID_TOP_WITH_RECENT : GRID_TOP_DEFAULT) + 'px';
-    grid.el.style.height = (withRecent ? GRID_HEIGHT_WITH_RECENT : GRID_HEIGHT_DEFAULT) + 'px';
-    grid.refresh();
-  }
-
-  async function loadRecent() {
-    try {
-      const recType = section.type === 'show' ? 4 : 1; // 4 = episode, 1 = movie
-      const recs = await session.server.recentItems(section.key, { type: recType, limit: RECENT_LIMIT });
-      if (!recs.length) { recentRow.el.style.display = 'none'; layoutGrid(false); return; }
-      recentRow.setItems(recs);
-      recentRow.el.style.display = '';
-      layoutGrid(true);
-      // Keep focus on the grid (the main content); the rail is reached by
-      // pressing Up from the grid's top row. Stealing focus here would fight
-      // whatever the user was doing and break keyboard expectations.
-      syncZone();
-    } catch (e) { error('recently added failed', section.title, e); }
-  }
-
   async function loadPage(p) {
     if (pages.has(p)) return;
-    if (grid && grid.total && p * PAGE >= grid.total) return;
+    if (grid && grid.total && R() + p * PAGE >= grid.total) return;
     pages.set(p, 'loading');
     const gen = generation;
     try {
@@ -145,13 +116,14 @@ export function LibraryScreen(section) {
       if (gen !== generation) return;
       res.items.forEach((it, i) => { items[p * PAGE + i] = it; });
       pages.set(p, true);
-      if (grid.total !== res.total) {
-        grid.setTotal(res.total);
-        setText(count, res.total + (unwatchedOnly ? ' unwatched' : '') + (section.type === 'show' ? ' shows' : ' movies'));
+      serverTotal = res.total;
+      if (grid.total !== R() + serverTotal) {
+        grid.setTotal(R() + serverTotal);
+        setText(count, serverTotal + (unwatchedOnly ? ' unwatched' : '') + (section.type === 'show' ? ' shows' : ' movies'));
       } else {
         grid.refresh();
       }
-      if (p === 0 && res.items[0]) grid.onFocus(grid.current());
+      if (p === 0 && res.items[0] && grid.index >= R()) grid.onFocus(grid.current());
     } catch (e) {
       pages.delete(p);
       error('library page failed', section.title, p, e);
@@ -173,20 +145,35 @@ export function LibraryScreen(section) {
     } catch (e) { /* letter jump just won't work */ }
   }
 
+  // Newest additions become the grid's leading row(s). Loaded once per section;
+  // deduped against Continue Watching so nothing repeats. When there's nothing
+  // new the grid is just the normal sorted list.
+  async function loadRecent() {
+    try {
+      const recType = section.type === 'show' ? 4 : 1; // 4 = episode, 1 = movie
+      const recs = await session.server.recentItems(section.key, { type: recType, limit: RECENT_LIMIT });
+      if (!recs.length) return;
+      recent = recs;
+      // The recent block now occupies the first R() slots, so the total grows by
+      // R(). serverTotal is authoritative once page 0 has landed; otherwise the
+      // in-flight loadPage will setTotal with the updated R().
+      if (pages.get(0) === true) grid.setTotal(R() + serverTotal);
+      else grid.refresh();
+    } catch (e) { error('recently added failed', section.title, e); }
+  }
+
   function reload() {
     generation++;
     alphaMode = false;
     alphaRail.style.display = 'none';
     pages = new Map();
     items = [];
+    serverTotal = 0;
     setText(sortEl, 'Sorted by ' + SORTS[sortIndex].label + (unwatchedOnly ? '  ·  Unwatched only' : ''));
     setText(count, '');
-    grid.total = 0;
+    grid.total = R();       // keep the recent block visible while the grid refetches
     grid.index = 0;
     grid.refresh();
-    // Re-sorting is about the grid — return focus there if we were on the rail.
-    zone = 'grid';
-    syncZone();
     loadPage(0);
     loadLetters();
   }
@@ -196,14 +183,15 @@ export function LibraryScreen(section) {
   function openAlpha() {
     if (!letters.length) return;
     alphaMode = true;
-    const i = letters.findIndex((l, k) => grid.index >= l.start &&
-      (k === letters.length - 1 || grid.index < letters[k + 1].start));
+    const sIdx = serverIndexOf(grid.index);
+    const i = letters.findIndex((l, k) => sIdx >= l.start &&
+      (k === letters.length - 1 || sIdx < letters[k + 1].start));
     alphaIndex = Math.max(0, i);
     paintAlpha();
   }
 
   function openMenu() {
-    const cur = (zone === 'recent' && recentRow.el.style.display !== 'none') ? recentRow.current() : grid.current();
+    const cur = grid.current();
     showOptions({
       title: section.title,
       subtitle: cur ? 'Focused: ' + cur.title : '',
@@ -220,10 +208,10 @@ export function LibraryScreen(section) {
 
   function jump(dir) {
     if (letters.length) {
-      const i = grid.index;
-      let li = letters.findIndex((l, k) => i >= l.start && (k === letters.length - 1 || i < letters[k + 1].start));
+      const sIdx = serverIndexOf(grid.index);
+      let li = letters.findIndex((l, k) => sIdx >= l.start && (k === letters.length - 1 || sIdx < letters[k + 1].start));
       li = Math.max(0, Math.min(letters.length - 1, li + dir));
-      grid.focusIndex(letters[li].start);
+      grid.focusIndex(R() + letters[li].start);
       setText(focusInfo, letters[li].title);
     } else {
       grid.focusIndex(grid.index + dir * grid.cols * 3);
@@ -235,20 +223,6 @@ export function LibraryScreen(section) {
     name: 'library',
     onShow() { ambience.restore(); },
     onKey(action) {
-      // Recently Added rail (Option A): left/right move within it, Down drops
-      // into the grid, Up/Back leave it. Only active when the rail is showing.
-      if (zone === 'recent' && recentRow.el.style.display !== 'none') {
-        if (action === 'left' || action === 'right') { recentRow.move(action === 'left' ? -1 : 1); return true; }
-        if (action === 'down') {
-          zone = 'grid'; syncZone();
-          grid.focusIndex(0);
-          return true;
-        }
-        if (action === 'enter') { recentRow.select(); return true; }
-        if (action === 'play' || action === 'playpause') { const c = recentRow.current(); if (c) playItem(c); return true; }
-        if (action === 'back') { zone = 'grid'; syncZone(); grid.focusIndex(0); return true; }
-        return true;
-      }
       if (alphaMode) {
         if (action === 'up' || action === 'down') {
           alphaIndex = Math.max(0, Math.min(letters.length - 1, alphaIndex + (action === 'down' ? 1 : -1)));
@@ -271,12 +245,7 @@ export function LibraryScreen(section) {
       switch (action) {
         case 'left': grid.move(-1, 0); paintAlpha(); return true;
         case 'right': grid.move(1, 0); paintAlpha(); return true;
-        case 'up':
-          // From the grid's top row, Up climbs back onto the Recently Added rail.
-          if (grid.index < grid.cols && recentRow.el.style.display !== 'none') {
-            zone = 'recent'; syncZone(); recentRow.focusIndex(0); return true;
-          }
-          grid.move(0, -1); return true;
+        case 'up': grid.move(0, -1); return true;
         case 'down': grid.move(0, 1); return true;
         case 'pageup': jump(-1); return true;
         case 'pagedown': jump(1); return true;
