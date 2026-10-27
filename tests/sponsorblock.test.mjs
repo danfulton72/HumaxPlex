@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { youtubeId, normalizeSegments, skipTarget, verifyConnection } from '../web/js/player/sponsorblock.js';
+import { youtubeId, normalizeSegments, skipTarget, verifyConnection, segmentsFor } from '../web/js/player/sponsorblock.js';
+import * as store from '../web/js/util/store.js';
+
+// store.js persists via localStorage, which node lacks by default. Provide a
+// tiny in-memory shim so config can be set/checked in tests.
+const _ls = new Map();
+globalThis.localStorage = {
+  getItem: k => (_ls.has(k) ? _ls.get(k) : null),
+  setItem: (k, v) => { _ls.set(k, String(v)); },
+  removeItem: k => { _ls.delete(k); },
+  clear: () => { _ls.clear(); },
+};
 
 test('extracts bracketed YouTube IDs from Tube Archivist filenames', () => {
   assert.equal(youtubeId('/video/Example [dQw4w9WgXcQ].mkv'), 'dQw4w9WgXcQ');
@@ -96,4 +107,72 @@ test('verifyConnection: server 5xx is reported as a server error', async () => {
     assert.equal(r.ok, false);
     assert.match(r.reason, /server error/i);
   } finally { globalThis.fetch = real; }
+});
+
+// segmentsFor: public SponsorBlock API is primary, Tube Archivist is fallback.
+// In node there's no EasyPlexVideo bridge, so both sources go through fetch —
+// we route by URL host to simulate each backend independently.
+const ITEM = { librarySectionID: 32 };
+const PART = { file: '/Media/tubearchivist/chan/kBUxiiyfO4Y.mp4' };
+
+function routeFetch({ sb, ta }) {
+  return async (url) => {
+    if (String(url).includes('sponsor.ajay.app')) return sb(String(url));
+    return ta(String(url));
+  };
+}
+
+test('segmentsFor: uses public SponsorBlock API when it succeeds', async () => {
+  store.set('sponsorBlock', { enabled: true, sectionId: '32', categories: ['sponsor', 'selfpromo'] });
+  const calls = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = routeFetch({
+    sb: (u) => { calls.push(u); return { ok: true, json: async () => [{ videoID: 'kBUxiiyfO4Y', segments: [{ category: 'selfpromo', actionType: 'skip', segment: [3.4, 6.3] }] }, { videoID: 'OTHERVIDEO12', segments: [{ category: 'sponsor', segment: [0, 5] }] }] }; },
+    ta: (u) => { calls.push(u); throw new Error('TA should not be called'); },
+  });
+  try {
+    const segs = await segmentsFor(ITEM, PART);
+    assert.deepEqual(segs, [{ start: 3400, end: 6300 }]);
+    // Only the public API was hit, keyed on the sha256 prefix with JSON-array params.
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /sponsor\.ajay\.app\/api\/skipSegments\/[0-9a-f]{4}\?/);
+    assert.match(calls[0], /categories=%5B%22sponsor%22/); // JSON array, url-encoded
+  } finally { globalThis.fetch = real; store.set('sponsorBlock', {}); }
+});
+
+test('segmentsFor: falls back to Tube Archivist when the public API fails', async () => {
+  store.set('sponsorBlock', { enabled: true, server: 'http://ta:8000', token: 'tok', sectionId: '32', categories: ['interaction'] });
+  const real = globalThis.fetch;
+  globalThis.fetch = routeFetch({
+    sb: () => { throw new Error('no internet'); },
+    ta: (u) => {
+      assert.match(u, /ta:8000\/api\/video\/kBUxiiyfO4Y\//);
+      return { ok: true, json: async () => ({ sponsorblock: { is_enabled: true, segments: [{ category: 'interaction', segment: [10, 20] }] } }) };
+    },
+  });
+  try {
+    const segs = await segmentsFor(ITEM, PART);
+    assert.deepEqual(segs, [{ start: 10000, end: 20000 }]);
+  } finally { globalThis.fetch = real; store.set('sponsorBlock', {}); }
+});
+
+test('segmentsFor: returns empty when both sources fail', async () => {
+  store.set('sponsorBlock', { enabled: true, server: 'http://ta:8000', token: 'tok', sectionId: '32', categories: ['sponsor'] });
+  const real = globalThis.fetch;
+  globalThis.fetch = routeFetch({ sb: () => { throw new Error('down'); }, ta: () => { throw new Error('down too'); } });
+  try {
+    assert.deepEqual(await segmentsFor(ITEM, PART), []);
+  } finally { globalThis.fetch = real; store.set('sponsorBlock', {}); }
+});
+
+test('segmentsFor: no-op outside the configured library or when disabled', async () => {
+  store.set('sponsorBlock', { enabled: true, sectionId: '32', categories: ['sponsor'] });
+  const real = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = () => { called = true; return Promise.resolve({ ok: true, json: async () => [] }); };
+  try {
+    assert.deepEqual(await segmentsFor({ librarySectionID: 99 }, PART), []); // wrong library
+    assert.deepEqual(await segmentsFor(ITEM, { file: 'no-id.mp4' }), []);     // no youtube id
+    assert.equal(called, false);                                              // never fetched
+  } finally { globalThis.fetch = real; store.set('sponsorBlock', {}); }
 });

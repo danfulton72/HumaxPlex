@@ -276,15 +276,21 @@ public final class MainActivity extends Activity {
                 try {
                     URL url = new URL(endpoint);
                     String scheme = url.getProtocol();
-                    if (!("http".equals(scheme) || "https".equals(scheme)) ||
-                        !url.getPath().matches("/api/video/[A-Za-z0-9_-]{11}/")) {
+                    String host = url.getHost() == null ? "" : url.getHost().toLowerCase();
+                    boolean taPath = url.getPath().matches("/api/video/[A-Za-z0-9_-]{11}/");
+                    // Public SponsorBlock API: /api/skipSegments/<4-char sha256 prefix>
+                    boolean sbPublic = host.equals("sponsor.ajay.app") &&
+                        url.getPath().matches("/api/skipSegments/[0-9a-f]{4}");
+                    if (!("http".equals(scheme) || "https".equals(scheme)) || !(taPath || sbPublic)) {
                         throw new IllegalArgumentException("Invalid SponsorBlock endpoint");
                     }
                     conn = (HttpURLConnection) url.openConnection();
                     conn.setConnectTimeout(7000);
                     conn.setReadTimeout(7000);
                     conn.setInstanceFollowRedirects(false); // never send a token to a redirect
-                    conn.setRequestProperty("Authorization", "Token " + token);
+                    if (token != null && !token.isEmpty()) {
+                        conn.setRequestProperty("Authorization", "Token " + token);
+                    }
                     status = conn.getResponseCode();
                     if (status == 200) {
                         try (InputStream in = conn.getInputStream();
