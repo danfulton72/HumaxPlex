@@ -139,6 +139,9 @@ async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(base);
   await page.waitForTimeout(1500);
+  // Data arrives asynchronously and can take longer on busy CI machines.
+  if (signedIn && !sectionDelay) await page.waitForFunction(() =>
+    [...document.querySelectorAll('.home .nav-item')].some(n => n.textContent.includes('Films')), null, { timeout: 10000 });
   const key = async (a, wait = 150) => { await page.evaluate(x => window.__androidAction(x), a); await page.waitForTimeout(wait); };
   const text = sel => page.evaluate(s => (document.querySelector(s) || {}).textContent || '', sel);
   const list = sel => page.evaluate(s => [...document.querySelectorAll(s)].map(e => e.textContent), sel);
