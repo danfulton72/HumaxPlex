@@ -352,14 +352,22 @@ export function HomeScreen() {
       // hidden, so BOTH the nav bar and the "Recent <lib>" rows follow the same
       // curated order.
       const rawSections = await server.sections();
-      if (!stillCurrent()) return;
+      if (!stillCurrent()) {
+        // Legacy sessions can gain a UUID during ensureUserRole(). Restart
+        // under the now-stable identity, but never revive a switched server.
+        if (session.server === server) load();
+        return;
+      }
       allSections = rawSections;
       hiddenKeys = new Set(store.get(hiddenKey(), []));
       const ordered = orderedSections(rawSections, store.get(orderKey(), []));
       const sections = ordered.filter(s => !hiddenKeys.has(s.key));
       buildNav(sections);
       const [hubs, recent] = await Promise.all([server.hubs(), server.recentByLibrary(sections, { limit: 12 })]);
-      if (!stillCurrent()) return;
+      if (!stillCurrent()) {
+        if (session.server === server) load();
+        return;
+      }
       // Show only the two standard in-progress hubs on Home. Everything else Plex
       // returns — cross-library "Recently Added" (replaced by the per-library rows
       // below), "Recently Added Videos", and curated collections like "Oh, The
