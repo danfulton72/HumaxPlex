@@ -277,7 +277,7 @@ public final class MainActivity extends Activity {
                     URL url = new URL(endpoint);
                     String scheme = url.getProtocol();
                     if (!("http".equals(scheme) || "https".equals(scheme)) ||
-                        !url.getPath().matches("/api/video/[A-Za-z0-9_-]{11}/sponsor/")) {
+                        !url.getPath().matches("/api/video/[A-Za-z0-9_-]{11}/")) {
                         throw new IllegalArgumentException("Invalid SponsorBlock endpoint");
                     }
                     conn = (HttpURLConnection) url.openConnection();

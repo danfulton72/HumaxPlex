@@ -8,6 +8,35 @@ test('extracts bracketed YouTube IDs from Tube Archivist filenames', () => {
   assert.equal(youtubeId('not-a-video-id.mkv'), null);
 });
 
+test('extracts bare-ID stems from Tube Archivist filenames', () => {
+  // TA's default naming: <channel>/<youtube_id>.<ext>, no brackets or title.
+  assert.equal(youtubeId('/Media/tubearchivist/UCFki_upOKkji8k-ufUEX3cA/SHGauVE2ud4.mp4'), 'SHGauVE2ud4');
+  assert.equal(youtubeId('qjYsukKQNvU.mkv'), 'qjYsukKQNvU');
+  // A longer stem that merely contains an 11-char run must NOT match.
+  assert.equal(youtubeId('dQw4w9WgXcQextra.mp4'), null);
+  // Bracketed form still wins when both are present.
+  assert.equal(youtubeId('My Video [dQw4w9WgXcQ].mp4'), 'dQw4w9WgXcQ');
+});
+
+test('normalizes segments from the video-detail response shape', () => {
+  // The live TA endpoint /api/video/<id>/ returns the whole video object with a
+  // top-level `sponsorblock` field (no `.data` wrapper, no `/sponsor/` route).
+  const payload = {
+    youtube_id: '3Qf4ABaXmFM',
+    title: 'My 1st Bushcraft Camping Trip in Alaska',
+    sponsorblock: {
+      is_enabled: true, last_refresh: 1779397623, has_unlocked: true,
+      segments: [
+        { actionType: 'none', videoDuration: 1452.061, segment: [1446.243, 1452.061], votes: 1, category: 'interaction', locked: 0 },
+        { actionType: 'skip', videoDuration: 1452.061, segment: [0.5, 12.2], votes: 9, category: 'sponsor', locked: 0 },
+      ],
+    },
+  };
+  assert.deepEqual(normalizeSegments(payload, ['sponsor', 'selfpromo', 'interaction']), [
+    { start: 500, end: 12200 }, { start: 1446243, end: 1452061 },
+  ]);
+});
+
 test('filters and sorts SponsorBlock segments using milliseconds', () => {
   const payload = { data: { sponsorblock: { is_enabled: true, segments: [
     { category: 'interaction', segment: [20, 30] },

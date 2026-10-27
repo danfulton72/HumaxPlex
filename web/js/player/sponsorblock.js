@@ -23,9 +23,16 @@ export function saveConfig(c) {
   cache.clear();
 }
 
-// Match a bracketed video ID, not an arbitrary 11-character part of a title.
+// Extract the YouTube ID from a Plex file path. Tube Archivist names files two
+// ways: a bare ID stem (`SHGauVE2ud4.mp4`) or a bracketed ID in the title
+// (`My Video [dQw4w9WgXcQ].mkv`). Accept both, but only when the ID is the whole
+// filename stem (or the bracketed form) so we never grab an arbitrary 11-char
+// run out of a longer title.
 export function youtubeId(filename) {
-  const m = String(filename || '').match(/\[([a-zA-Z0-9_-]{11})\](?=\.[^.]+$)/);
+  const name = String(filename || '').split('/').pop();
+  let m = name.match(/\[([a-zA-Z0-9_-]{11})\](?!\w)/);
+  if (m && /\.[^.]+$/.test(name)) return m[1];
+  m = name.match(/^([a-zA-Z0-9_-]{11})\.[^.]+$/);
   return m ? m[1] : null;
 }
 
@@ -78,7 +85,7 @@ export async function segmentsFor(item, part) {
   if (!id) return [];
   const key = c.server + '/' + id + '/' + c.categories.join(',');
   if (cache.has(key)) return cache.get(key);
-  const result = normalizeSegments(await nativeRequest(c.server + '/api/video/' + id + '/sponsor/', c.token), c.categories);
+  const result = normalizeSegments(await nativeRequest(c.server + '/api/video/' + id + '/', c.token), c.categories);
   cache.set(key, result);
   return result;
 }
