@@ -15,7 +15,8 @@ import { error } from '../util/log.js';
 import { metaLine } from '../util/format.js';
 
 const PAGE = 140;
-const RECENT_LIMIT = 12;
+const GRID_COLS = 7;          // must match the Grid's column count below
+const RECENT_LIMIT = GRID_COLS; // recently-added fills exactly one grid row
 const SORTS = [
   { id: 'titleSort', label: 'A–Z' },
   { id: 'addedAt:desc', label: 'Recently added' },
@@ -40,7 +41,8 @@ export function LibraryScreen(section) {
   let unwatchedOnly = false;
   let pages = new Map();     // page -> 'loading' | true
   let items = [];            // server items, indexed by SERVER position (0-based)
-  let recent = [];           // newest items, shown as the grid's leading row(s)
+  let recent = [];           // newest items (padded with nulls to a full row)
+  let recentReal = 0;        // how many of those recent slots hold real items
   let serverTotal = 0;       // item count the server reported for the current sort
   let letters = [];          // [{ title: 'A', start: 0 }] — server positions
   let generation = 0;
@@ -79,7 +81,7 @@ export function LibraryScreen(section) {
   const filter = () => (unwatchedOnly ? (type === 2 ? { unwatchedLeaves: 1 } : { unwatched: 1 }) : {});
 
   grid = new Grid({
-    top: 200, height: 880, total: 0,
+    cols: GRID_COLS, top: 200, height: 880, total: 0,
     getItem: gridItem,
     onFocus: (item, index) => {
       // Warm posters for the row just past the recycled pool.
@@ -149,13 +151,16 @@ export function LibraryScreen(section) {
   }
 
   // Newest additions become the grid's leading row(s). Loaded once per section;
-  // deduped against Continue Watching so nothing repeats. When there's nothing
-  // new the grid is just the normal sorted list.
+  // deduped against Continue Watching and capped at one item per creator. The
+  // block is padded with blank slots up to a full grid row (GRID_COLS) so it
+  // always occupies exactly one row, even when there are few unique creators.
   async function loadRecent() {
     try {
       const recType = section.type === 'show' ? 4 : 1; // 4 = episode, 1 = movie
       const recs = await session.server.recentItems(section.key, { type: recType, limit: RECENT_LIMIT, isShow: section.type === 'show' });
       if (!recs.length) return;
+      recentReal = recs.length;
+      while (recs.length < GRID_COLS) recs.push(null);   // pad to a full row
       recent = recs;
       // The recent block now occupies the first R() slots, so the total grows by
       // R(). serverTotal is authoritative once page 0 has landed; otherwise the
@@ -244,6 +249,18 @@ export function LibraryScreen(section) {
       if (action === 'right' && letters.length && grid.index % grid.cols === grid.cols - 1) {
         openAlpha();
         return true;
+      }
+      // In the recently-added row (grid row 0), keep focus on the real items and
+      // never land on the blank padding slots.
+      const inRecentRow = recent.length > 0 && grid.index < R();
+      if (inRecentRow) {
+        if (action === 'left' || action === 'right') {
+          const col = grid.index % grid.cols;
+          const nextCol = Math.max(0, Math.min(recentReal - 1, col + (action === 'right' ? 1 : -1)));
+          if (nextCol !== col) grid.focusIndex(nextCol);
+          return true;
+        }
+        if (action === 'down') { grid.focusIndex(R()); return true; }   // drop into the main grid
       }
       switch (action) {
         case 'left': grid.move(-1, 0); paintAlpha(); return true;
