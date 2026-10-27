@@ -58,6 +58,47 @@ export function skipTarget(segments, position, duration, ignored = new Set()) {
   return { index: i, target: duration > 0 ? Math.min(end, duration - 500) : end };
 }
 
+// Probe whether the configured Tube Archivist server is reachable AND the
+// token is valid, without needing a real video ID. We request a deliberately
+// bogus video id: with a valid token TA gets past auth and returns 404
+// ("video not found"); with a bad/missing token it returns 403 ("Invalid
+// token"). A network failure / timeout means the server is unreachable.
+export async function verifyConnection(server, token) {
+  const url = String(server || '').replace(/\/+$/, '') + '/api/video/AAAAAAAAAAA/';
+  let status, body;
+  if (typeof EasyPlexVideo !== 'undefined' && EasyPlexVideo.fetchSponsor) {
+    // Native bridge resolves only on 200; anything else surfaces as a reject
+    // carrying the HTTP status in the message.
+    try {
+      await nativeRequest(url, token);
+      return { ok: true };
+    } catch (e) {
+      const m = String(e && e.message || '');
+      const code = m.match(/HTTP (\d{3})/);
+      if (!code) return { ok: false, reason: 'Could not reach Tube Archivist (' + (m || 'timeout') + ')' };
+      const s = Number(code[1]);
+      if (s === 0) return { ok: false, reason: 'Could not reach Tube Archivist (no response)' };
+      return interpret(s, m);
+    }
+  }
+  try {
+    const r = await fetch(url, { headers: { Authorization: 'Token ' + token } });
+    status = r.status;
+    try { body = await r.json(); } catch (_) { body = {}; }
+  } catch (e) {
+    return { ok: false, reason: 'Could not reach Tube Archivist at ' + url.split('/api')[0] };
+  }
+  return interpret(status, body && body.detail);
+}
+
+function interpret(status, detail) {
+  if (status === 404) return { ok: true };                 // got past auth -> token is good
+  if (status === 401 || status === 403)
+    return { ok: false, reason: 'Tube Archivist rejected the API token' + (detail ? ' (' + detail + ')' : '') };
+  if (status >= 500) return { ok: false, reason: 'Tube Archivist server error (HTTP ' + status + ')' };
+  return { ok: false, reason: 'Unexpected response from Tube Archivist (HTTP ' + status + ')' };
+}
+
 function nativeRequest(url, token) {
   if (typeof EasyPlexVideo === 'undefined' || !EasyPlexVideo.fetchSponsor) {
     return fetch(url, { headers: { Authorization: 'Token ' + token } })

@@ -270,7 +270,7 @@ public final class MainActivity extends Activity {
         // bundled JavaScript can access this bridge; no tokens enter URLs.
         @JavascriptInterface public void fetchSponsor(String endpoint, String token, String requestId) {
             new Thread(() -> {
-                int status = 500;
+                int status = 0; // 0 = no HTTP response (connection failed / timeout)
                 String response = "";
                 HttpURLConnection conn = null;
                 try {

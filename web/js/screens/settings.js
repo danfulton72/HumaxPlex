@@ -13,7 +13,7 @@ import * as store from '../util/store.js';
 import { showOptions, toast } from '../ui/options.js';
 import { VodSetupScreen } from './vodsetup.js';
 import { loadConfig as vodConfig } from '../xtream/api.js';
-import { config as sponsorConfig, saveConfig as saveSponsor, CATEGORIES } from '../player/sponsorblock.js';
+import { config as sponsorConfig, saveConfig as saveSponsor, verifyConnection, CATEGORIES } from '../player/sponsorblock.js';
 
 const START_LABELS = { home: 'Home', guide: 'Live TV guide', channel: 'Live TV: last channel' };
 
@@ -122,6 +122,14 @@ export function SettingsScreen() {
           if (value == null) return;
           if (value.trim()) { c.token = value.trim(); saveSponsor(c); }
           sponsorSettings();
+        } },
+        { label: 'Verify connection', run: async () => {
+          if (!c.server || !c.token) { toast('Set the Tube Archivist URL and token first'); return; }
+          toast('Checking Tube Archivist…', 1500);
+          try {
+            const r = await verifyConnection(c.server, c.token);
+            toast(r.ok ? 'Tube Archivist connected ✓' : (r.reason || 'Connection failed'), r.ok ? 2500 : 5000);
+          } catch (e) { toast('Could not verify: ' + (e && e.message || e), 5000); }
         } },
         { label: 'Plex YouTube library', run: async () => {
           try {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { youtubeId, normalizeSegments, skipTarget } from '../web/js/player/sponsorblock.js';
+import { youtubeId, normalizeSegments, skipTarget, verifyConnection } from '../web/js/player/sponsorblock.js';
 
 test('extracts bracketed YouTube IDs from Tube Archivist filenames', () => {
   assert.equal(youtubeId('/video/Example [dQw4w9WgXcQ].mkv'), 'dQw4w9WgXcQ');
@@ -56,4 +56,44 @@ test('skipTarget skips once, merges overlaps, and respects duration', () => {
   assert.equal(skipTarget(segments, 1500, 10000, new Set([0])), null);
   assert.deepEqual(skipTarget(segments, 4000, 5200), { index: 1, target: 4700 });
   assert.equal(skipTarget(segments, 7000, 10000), null);
+});
+
+// verifyConnection probes a bogus video id: 404 means auth passed (token good),
+// 403 means the token was rejected, a network failure means unreachable.
+test('verifyConnection: 404 (past auth) counts as connected', async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => ({ status: 404, json: async () => ({ error: 'video not found' }) });
+  try {
+    assert.deepEqual(await verifyConnection('http://ta:8000/', 'tok'), { ok: true });
+  } finally { globalThis.fetch = real; }
+});
+
+test('verifyConnection: 403 reports an invalid token', async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => ({ status: 403, json: async () => ({ detail: 'Invalid token.' }) });
+  try {
+    const r = await verifyConnection('http://ta:8000', 'bad');
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /rejected the API token/);
+  } finally { globalThis.fetch = real; }
+});
+
+test('verifyConnection: network failure reports unreachable', async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('fetch failed'); };
+  try {
+    const r = await verifyConnection('http://unreachable:8000', 'tok');
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /Could not reach Tube Archivist/);
+  } finally { globalThis.fetch = real; }
+});
+
+test('verifyConnection: server 5xx is reported as a server error', async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => ({ status: 502, json: async () => ({}) });
+  try {
+    const r = await verifyConnection('http://ta:8000', 'tok');
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /server error/i);
+  } finally { globalThis.fetch = real; }
 });
