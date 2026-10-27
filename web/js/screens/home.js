@@ -4,13 +4,14 @@ import { h, setText, setTransform, toggleClass } from '../util/dom.js';
 import { Row } from '../ui/row.js';
 import { useAmbience, HeroArt } from '../ui/backdrop.js';
 import { session } from '../session.js';
+import { profileKey } from '../session.js';
 import { metaLine } from '../util/format.js';
 import { isFast } from '../input.js';
 import * as store from '../util/store.js';
 import * as router from '../router.js';
 import * as icons from '../ui/icons.js';
 import { openItem, playItem, openLibrary, openSearch, openSettings, itemOptions } from '../nav.js';
-import { toast } from '../ui/options.js';
+import { toast, showOptions } from '../ui/options.js';
 import { LiveTvScreen } from './livetv.js';
 import { VodScreen } from './vod.js';
 import { isConfigured as vodConfigured } from '../xtream/api.js';
@@ -27,7 +28,13 @@ import { error, log } from '../util/log.js';
 
 const ROWS_TOP = 600;
 const NAV_PAD = 80; // wider than the 64px edge fade in app.css
-const NAV_ORDER_KEY = 'navOrder';   // user's preferred library order (array of section keys)
+const NAV_ORDER_BASE = 'navOrder';   // user's preferred library order (array of section keys)
+const NAV_HIDDEN_BASE = 'navHidden'; // libraries hidden from nav + recents (favourites by exclusion)
+
+// Per-profile store keys: each profile (Dan, Aiden, ...) gets its own order and
+// its own hidden set, so a kid's box can show only kids' libraries.
+const orderKey = () => NAV_ORDER_BASE + ':' + profileKey();
+const hiddenKey = () => NAV_HIDDEN_BASE + ':' + profileKey();
 
 // Apply a saved order (array of section keys) to a sections array. Keys not in
 // the saved list keep their original relative order and sort after the known
@@ -108,14 +115,16 @@ export function HomeScreen() {
   let artTimer = 0;
   let reportedPaint = false;
 
-  let navSections = [];
+  let navSections = [];      // visible (ordered, non-hidden) sections
+  let allSections = [];      // every movie/show section (for the More list)
+  let hiddenKeys = new Set(); // section keys hidden for this profile
   let navHasVod = false;
   // Library reordering: hold Select on a library to pick it up, move left/right
-  // to slide it, Select again to place (saves), Back to cancel.
+  // to slide it, Select again to place (saves), Down to hide it, Back to cancel.
   let reorderMode = false;
   let dragIndex = -1;
   function buildNav(sections) {
-    // Callers pass already-ordered sections (see load()); this just renders them.
+    // Callers pass already-ordered, non-hidden sections (see load()); render them.
     navSections = sections;
     navHasVod = vodVisible();
     const was = navItems && navItems[navIndex];
@@ -124,6 +133,7 @@ export function HomeScreen() {
       .concat(sections.map(s => ({ label: s.title, id: 'section', section: s })))
       .concat([{ label: 'Live TV & DVR', id: 'livetv' }])
       .concat(navHasVod ? [{ label: 'VOD', id: 'vod' }] : [])
+      .concat(hiddenKeys.size ? [{ label: 'More ▸', id: 'more' }] : [])
       .concat([{ label: 'Search', id: 'search', icon: icons.search }, { label: 'Settings', id: 'settings', icon: icons.gear }]);
     // Keep focus on the same item when entries are added or removed.
     const same = was ? navItems.findIndex(n => n.id === was.id && (n.id !== 'section' || n.section.key === was.section.key)) : -1;
@@ -179,7 +189,7 @@ export function HomeScreen() {
     reorderMode = true;
     dragIndex = navIndex;
     renderNav();
-    toast('Move “' + cur.label + '” · OK to place · Back to cancel', 4000);
+    toast('Move “' + cur.label + '” · OK to place · Down to hide · Back to cancel', 4500);
     return true;
   }
 
@@ -202,7 +212,7 @@ export function HomeScreen() {
   function commitReorder() {
     // Persist the section keys in their current (possibly rearranged) order.
     const order = navItems.filter(n => n.id === 'section').map(n => n.section.key);
-    store.set(NAV_ORDER_KEY, order);
+    store.set(orderKey(), order);
     endReorder();
     toast('Library order saved', 2500);
   }
@@ -219,6 +229,33 @@ export function HomeScreen() {
     buildNav(navSections);
     navIndex = Math.min(navIndex, navItems.length - 1);
     renderNav();
+  }
+
+  // --- Hide / show libraries (per-profile favourites by exclusion) ---------
+  function saveHidden() { store.set(hiddenKey(), [...hiddenKeys]); }
+
+  function hideSection(key, label) {
+    if (!key || hiddenKeys.has(key)) return;
+    hiddenKeys.add(key);
+    saveHidden();
+    endReorder();
+    toast('Hidden “' + label + '” · open More to bring it back', 3500);
+    load();   // refresh nav + recents without the hidden library
+  }
+
+  // The "More ▸" overflow: list every hidden library; Select one to restore it.
+  function showMore() {
+    const hidden = allSections.filter(s => hiddenKeys.has(s.key));
+    if (!hidden.length) return;
+    showOptions({
+      title: 'Hidden libraries',
+      subtitle: 'Select to show again',
+      focus: 0,
+      items: hidden.map(s => ({
+        label: s.title,
+        run: () => { hiddenKeys.delete(s.key); saveHidden(); load(); },
+      })),
+    });
   }
 
   function showHero(item) {
@@ -306,10 +343,14 @@ export function HomeScreen() {
     loadedAt = Date.now();
     try {
       // Sections first (recent rows are per-library), then hubs + recents in parallel.
-      // Order the libraries by the user's saved preference so BOTH the nav bar
-      // and the "Recent <lib>" rows below follow the same order.
+      // Order the libraries by this profile's saved preference and drop any it has
+      // hidden, so BOTH the nav bar and the "Recent <lib>" rows follow the same
+      // curated order.
       const rawSections = await server.sections();
-      const sections = orderedSections(rawSections, store.get(NAV_ORDER_KEY, []));
+      allSections = rawSections;
+      hiddenKeys = new Set(store.get(hiddenKey(), []));
+      const ordered = orderedSections(rawSections, store.get(orderKey(), []));
+      const sections = ordered.filter(s => !hiddenKeys.has(s.key));
       buildNav(sections);
       const [hubs, recent] = await Promise.all([server.hubs(), server.recentByLibrary(sections, { limit: 12 })]);
       // Drop the generic cross-library "Recently Added" hubs — they're replaced
@@ -324,7 +365,11 @@ export function HomeScreen() {
   }
 
   const cached = store.get('homeCache');
+  // Load this profile's hidden set up front so the "More ▸" item renders even
+  // on the instant cached paint (before load() refetches).
+  hiddenKeys = new Set(store.get(hiddenKey(), []));
   if (cached && session.server && cached.server === session.server.id) {
+    allSections = cached.sections || [];
     buildNav(cached.sections || []);
     setHubs((cached.hubs || []).concat(cached.recent || []));
   } else {
@@ -340,6 +385,7 @@ export function HomeScreen() {
     else if (n.id === 'vod') router.push(VodScreen());
     else if (n.id === 'search') openSearch();
     else if (n.id === 'settings') openSettings();
+    else if (n.id === 'more') showMore();
   }
 
   return {
@@ -355,11 +401,13 @@ export function HomeScreen() {
     onKey(action) {
       if (zone === 'nav') {
         if (reorderMode) {
-          // Dragging a library: slide it, place it, or cancel.
+          // Dragging a library: slide it, place it, hide it, or cancel.
+          const cur = navItems[navIndex];
           if (action === 'left') { moveDrag(-1); return true; }
           if (action === 'right') { moveDrag(1); return true; }
           if (action === 'enter' || action === 'menu') { commitReorder(); return true; }
           if (action === 'back' || action === 'up') { cancelReorder(); return true; }
+          if (action === 'down' && cur && cur.id === 'section') { hideSection(cur.section.key, cur.label); return true; }
           return true;   // swallow everything else while reordering
         }
         if (action === 'left') { navIndex = Math.max(0, navIndex - 1); renderNav(); return true; }
