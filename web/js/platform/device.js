@@ -88,5 +88,24 @@ export function canDecode(mime) {
   return result;
 }
 
+// Can this box decode the MIME type in HARDWARE? Same contract as canDecode but
+// the native side ignores the generic software decoder (android.* / c2.android.*).
+// Used to avoid direct-playing a codec that only has a slow software path (which
+// pegs the CPU and judders on mid-range boxes). Browser default is true so the
+// HTML5 <video> fallback still applies when there's no native shell.
+const hwDecodeCache = {};
+export function canDecodeHW(mime) {
+  if (mime in hwDecodeCache) return hwDecodeCache[mime];
+  let result = true; // browser default
+  try {
+    const n = native();
+    if (n && typeof n.canDecodeHW === 'function') {
+      result = n.canDecodeHW(mime) === '1';
+    }
+  } catch (e) { result = true; }
+  hwDecodeCache[mime] = result;
+  return result;
+}
+
 // The native shell keeps the screen awake while video plays.
 export function setScreenSaver() {}

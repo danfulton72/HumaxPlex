@@ -513,6 +513,31 @@ public final class MainActivity extends Activity {
                 return "";
             }
         }
+        // Like canDecode, but only counts HARDWARE decoders. The generic Android
+        // fallback decoder is named "android.<codec>.decoder" or
+        // "c2.android.<codec>.decoder" and runs in software (it pegs the CPU and
+        // drops frames on mid-range boxes). Real hardware decoders carry the SoC
+        // vendor prefix (c2.mtk.*, c2.qcom.*, c2.samsung.*, ...). We use this to
+        // avoid direct-playing a codec that only has a slow software path.
+        // Returns "1"/"0"; empty string if the query itself failed.
+        @JavascriptInterface public String canDecodeHW(String mimeType) {
+            try {
+                android.media.MediaCodecList list = new android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS);
+                for (android.media.MediaCodecInfo info : list.getCodecInfos()) {
+                    if (info.isEncoder()) continue;
+                    String name = info.getName() == null ? "" : info.getName().toLowerCase();
+                    // Skip the generic software decoder(s).
+                    if (name.startsWith("android.") || name.startsWith("c2.android.")) continue;
+                    String[] types = info.getSupportedTypes();
+                    for (int i = 0; i < types.length; i++) {
+                        if (types[i] != null && types[i].equalsIgnoreCase(mimeType)) return "1";
+                    }
+                }
+                return "0";
+            } catch (Exception e) {
+                return "";
+            }
+        }
         // Film/show HUD text from the web player. progress is 0-1000 or -1;
         // show brings the HUD up; sticky keeps it up (paused, seeking).
         @JavascriptInterface public void setHud(String title, String line, int progress, boolean show, boolean sticky) {
