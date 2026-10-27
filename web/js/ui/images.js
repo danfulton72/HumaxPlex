@@ -23,8 +23,12 @@ function attach(img, url, instant) {
 function pump() {
   while (active < MAX_ACTIVE && (visibleQueue.length || prefetchQueue.length)) {
     const job = visibleQueue.length ? visibleQueue.pop() : prefetchQueue.shift();
-    // A promoted prefetch can have entries in both queues.
+    // Promoted prefetches and cancelled obsolete requests leave stale slots.
     if (job.started || pending.get(job.url) !== job) continue;
+    if (!job.background && ![...job.viewers].some(img => img._want === job.url)) {
+      pending.delete(job.url);
+      continue;
+    }
     job.started = true;
     active++;
     const loader = new Image();
@@ -52,20 +56,31 @@ function pump() {
 function request(url, img, background) {
   let job = pending.get(url);
   if (!job) {
-    job = { url, viewers: new Set(), started: false };
+    job = { url, viewers: new Set(), started: false, background };
     pending.set(url, job);
     (background ? prefetchQueue : visibleQueue).push(job);
   } else if (!background && !job.started) {
     // Visible work takes precedence even if originally queued as prefetch.
+    job.background = false;
     visibleQueue.push(job);
   }
   if (img) job.viewers.add(img);
+  // Bound stale queue entries after very fast remote scrolling.
+  if (visibleQueue.length > 250) {
+    const keep = visibleQueue.filter(j => !j.started && pending.get(j.url) === j);
+    visibleQueue.splice(0, visibleQueue.length, ...keep);
+  }
   pump();
 }
 
 // Point an <img> at a URL. Identical in-flight URLs share one download.
 export function load(img, url) {
   if (img._want === url) return;
+  const old = pending.get(img._want);
+  if (old) {
+    old.viewers.delete(img);
+    if (!old.started && !old.background && !old.viewers.size) pending.delete(old.url);
+  }
   img._want = url;
   if (!url) {
     img.classList.remove('in', 'now');
