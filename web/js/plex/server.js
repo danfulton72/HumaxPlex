@@ -106,8 +106,13 @@ export class Server {
   // HLS URL for content the TV can't direct play. Video is passed through when
   // possible; only the audio (e.g. DTS) or container gets converted.
   transcodeUrl(item, { session, offsetMs = 0, mediaIndex = 0, maxBitrate = 40000, resolution = '3840x2160', audioStreamID, subtitleStreamID } = {}) {
+    // Declare only what the box can direct-play. Do NOT send an
+    // add-transcode-target directive: Plex already has a built-in HLS
+    // transcode target, and adding a duplicate (same context=streaming +
+    // protocol=hls) makes the server reject the whole request with
+    // "ClientProfileExtra: video transcode target already exists for
+    // streaming hls" -> 400 -> playback error on screen.
     const extra = [
-      'add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264,hevc&audioCodec=aac,ac3,eac3)',
       'add-direct-play-profile(type=videoProfile&container=mp4,mkv&videoCodec=h264,hevc&audioCodec=aac,ac3,eac3)',
     ].join('+');
     return withQuery(this.uri + '/video/:/transcode/universal/start.m3u8', Object.assign({}, identity(), {
