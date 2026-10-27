@@ -108,7 +108,10 @@ export function LibraryScreen(section) {
 
   async function loadPage(p) {
     if (pages.has(p)) return;
-    if (grid && grid.total && R() + p * PAGE >= grid.total) return;
+    // Skip pages past the end of the SERVER list (the recent block is separate
+    // and never paged). Only enforce this once the server has reported a total;
+    // before that, page 0 must always load even if grid.total == R().
+    if (serverTotal > 0 && p * PAGE >= serverTotal) return;
     pages.set(p, 'loading');
     const gen = generation;
     try {
