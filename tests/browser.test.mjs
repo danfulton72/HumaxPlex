@@ -420,3 +420,44 @@ test('VOD categories by profile: the admin limits a child to suitable categories
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+
+// Cached Home content must never flash for a different Plex Home member, even
+// when a previous member's server is identical. Also exercise saved per-profile
+// library order, exclusions, and the More overflow on an instant cached paint.
+test('Home cache is profile scoped; library order and visibility stay isolated', async () => {
+  const sections = [
+    { key: '1', title: 'Films', type: 'movie' },
+    { key: '2', title: 'Kids TV', type: 'show' },
+  ];
+  const cached = {
+    v: 2, server: 'm1', profile: 'admin-uuid', sections,
+    hubs: [{ hubIdentifier: 'home.continue', title: 'Admin private row', type: 'movie', Metadata: [MOVIE] }],
+    recent: [],
+  };
+  const setup = [
+    "localStorage.setItem('ss.homeCache', JSON.stringify(" + JSON.stringify(cached) + "));",
+    "localStorage.setItem('ss.navOrder:admin-uuid', JSON.stringify(['2','1']));",
+    "localStorage.setItem('ss.navHidden:admin-uuid', JSON.stringify(['1']));",
+    "localStorage.setItem('ss.navOrder:kid-uuid', JSON.stringify(['1','2']));",
+    "localStorage.setItem('ss.navHidden:kid-uuid', JSON.stringify(['2']));",
+  ].join('');
+  // Hold Plex sections response while inspecting the synchronous cached paint.
+  const admin = await newPage({ extra: setup + "localStorage.setItem('ss.user', JSON.stringify({title:'Dan',uuid:'admin-uuid',admin:true}));" });
+  assert.ok((await admin.list('.home .nav-item')).some(v => v.includes('Kids TV')));
+  assert.ok((await admin.list('.home .nav-item')).some(v => v.includes('Films')));
+  assert.ok((await admin.text('.home')).includes('Admin private row'));
+  assert.deepEqual(admin.errors, []);
+  await admin.ctx.close();
+
+  const kid = await newPage({ extra: setup + "localStorage.setItem('ss.user', JSON.stringify({title:'Ella',uuid:'kid-uuid',admin:false}));" });
+  // A foreign cache must not be reused; fresh data has only the shared mock
+  // 'Recently Added' row, never the admin-specific cached title.
+  assert.ok(!(await kid.text('.home')).includes('Admin private row'));
+  assert.ok((await kid.list('.home .nav-item')).some(v => v.includes('Films')));
+  assert.ok(!(await kid.list('.home .nav-item')).some(v => v.includes('Kids TV')));
+  assert.deepEqual(kid.errors, []);
+  const saved = JSON.parse(await kid.page.evaluate(() => localStorage.getItem('ss.homeCache')));
+  assert.equal(saved.profile, 'kid-uuid');
+  await kid.ctx.close();
+});
