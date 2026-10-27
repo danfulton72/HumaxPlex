@@ -92,17 +92,17 @@ const XT_INFO = {
   movie_data: { stream_id: 11, container_extension: 'mkv' },
 };
 
-async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true, extra = '' } = {}) {
+async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true, extra = '', sections = [{ key: '1', title: 'Films', type: 'movie' }], sectionDelay = 0 } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: scale });
   await ctx.addInitScript(NATIVE + (signedIn ? SIGNED_IN : '') + extra);
   const seen = [], xtreamSeen = [];
-  await ctx.route('http://pms.test/**', route => {
+  await ctx.route('http://pms.test/**', async route => {
     const u = new URL(route.request().url());
     seen.push({ method: route.request().method(), path: u.pathname, query: u.search });
     const p = u.pathname;
     let body = {};
     if (p === '/identity') body = { MediaContainer: { machineIdentifier: 'm1' } };
-    else if (p === '/library/sections') body = { MediaContainer: { Directory: [{ key: '1', title: 'Films', type: 'movie' }] } };
+    else if (p === '/library/sections') body = { MediaContainer: { Directory: sections } };
     else if (p === '/hubs') body = { MediaContainer: { Hub: [{ hubIdentifier: 'home.continue', title: 'Recently Added', type: 'movie', size: 1, Metadata: [MOVIE] }] } };
     else if (p === '/library/sections/1/all') body = { MediaContainer: { totalSize: 1, size: 1, Metadata: [MOVIE] } };
     else if (p === '/library/sections/1/firstCharacter') body = { MediaContainer: { Directory: [{ title: 'T', size: 1 }] } };
@@ -110,7 +110,8 @@ async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true
     else if (p.startsWith('/library/metadata/')) body = { MediaContainer: { Metadata: [MOVIE] } };
     else if (p.endsWith('/decision')) body = { MediaContainer: { generalDecisionCode: 1000 } };
     else if (p === '/livetv/dvrs') body = { MediaContainer: { Dvr: [{ key: '1', Device: [{ uri: 'http://xtream.test/hdhr' }] }] } };
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    if (p === '/library/sections' && sectionDelay) await new Promise(r => setTimeout(r, sectionDelay));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   await ctx.route('http://xtream.test/**', route => {
     const u = new URL(route.request().url());
@@ -138,6 +139,9 @@ async function newPage({ width = 1920, height = 1080, scale = 1, signedIn = true
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(base);
   await page.waitForTimeout(1500);
+  // Data arrives asynchronously and can take longer on busy CI machines.
+  if (signedIn && !sectionDelay) await page.waitForFunction(() =>
+    [...document.querySelectorAll('.home .nav-item')].some(n => n.textContent.includes('Films')), null, { timeout: 10000 });
   const key = async (a, wait = 150) => { await page.evaluate(x => window.__androidAction(x), a); await page.waitForTimeout(wait); };
   const text = sel => page.evaluate(s => (document.querySelector(s) || {}).textContent || '', sel);
   const list = sel => page.evaluate(s => [...document.querySelectorAll(s)].map(e => e.textContent), sel);
@@ -419,4 +423,47 @@ test('VOD categories by profile: the admin limits a child to suitable categories
   assert.ok(!(await page.evaluate(() => [...document.querySelectorAll('.home .nav-item')].map(n => n.textContent))).includes('VOD'));
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+
+// Cached Home content must never flash for a different Plex Home member, even
+// when a previous member's server is identical. Also exercise saved per-profile
+// library order, exclusions, and the More overflow on an instant cached paint.
+test('Home cache is profile scoped; library order and visibility stay isolated', async () => {
+  const sections = [
+    { key: '1', title: 'Films', type: 'movie' },
+    { key: '2', title: 'Kids TV', type: 'show' },
+  ];
+  const cached = {
+    v: 2, server: 'm1', profile: 'admin-uuid', sections,
+    hubs: [{ hubIdentifier: 'home.continue', title: 'Admin private row', type: 'movie', Metadata: [MOVIE] }],
+    recent: [],
+  };
+  const setup = [
+    "localStorage.setItem('ss.homeCache', JSON.stringify(" + JSON.stringify(cached) + "));",
+    "localStorage.setItem('ss.navOrder:admin-uuid', JSON.stringify(['2','1']));",
+    "localStorage.setItem('ss.navHidden:admin-uuid', JSON.stringify(['1']));",
+    "localStorage.setItem('ss.navOrder:kid-uuid', JSON.stringify(['1','2']));",
+    "localStorage.setItem('ss.navHidden:kid-uuid', JSON.stringify(['2']));",
+  ].join('');
+  // Hold Plex sections response while inspecting the synchronous cached paint.
+  const admin = await newPage({ sections, sectionDelay: 3500, extra: setup + "localStorage.setItem('ss.user', JSON.stringify({title:'Dan',uuid:'admin-uuid',admin:true}));" });
+  assert.ok((await admin.list('.home .nav-item')).some(v => v.includes('Kids TV')));
+  assert.ok(!(await admin.list('.home .nav-item')).some(v => v.includes('Films')));
+  assert.ok((await admin.list('.home .nav-item')).some(v => v.includes('More')));
+  assert.ok((await admin.text('.home')).includes('Admin private row'));
+  assert.deepEqual(admin.errors, []);
+  await admin.ctx.close();
+
+  const kid = await newPage({ sections, extra: setup + "localStorage.setItem('ss.user', JSON.stringify({title:'Ella',uuid:'kid-uuid',admin:false}));" });
+  // A foreign cache must not be reused; fresh data has only the shared mock
+  // 'Recently Added' row, never the admin-specific cached title.
+  assert.ok(!(await kid.text('.home')).includes('Admin private row'));
+  assert.ok((await kid.list('.home .nav-item')).some(v => v.includes('Films')));
+  assert.ok(!(await kid.list('.home .nav-item')).some(v => v.includes('Kids TV')));
+  assert.ok((await kid.list('.home .nav-item')).some(v => v.includes('More')));
+  assert.deepEqual(kid.errors, []);
+  const saved = JSON.parse(await kid.page.evaluate(() => localStorage.getItem('ss.homeCache')));
+  assert.equal(saved.profile, 'kid-uuid');
+  await kid.ctx.close();
 });

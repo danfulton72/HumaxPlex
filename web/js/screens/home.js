@@ -342,6 +342,9 @@ export function HomeScreen() {
 
   async function load() {
     const server = session.server;
+    const profile = profileKey();
+    // A profile switch can happen while Plex requests are in flight.
+    const stillCurrent = () => session.server === server && profileKey() === profile;
     loadedAt = Date.now();
     try {
       // Sections first (recent rows are per-library), then hubs + recents in parallel.
@@ -349,19 +352,29 @@ export function HomeScreen() {
       // hidden, so BOTH the nav bar and the "Recent <lib>" rows follow the same
       // curated order.
       const rawSections = await server.sections();
+      if (!stillCurrent()) {
+        // Legacy sessions can gain a UUID during ensureUserRole(). Restart
+        // under the now-stable identity, but never revive a switched server.
+        if (session.server === server) load();
+        return;
+      }
       allSections = rawSections;
       hiddenKeys = new Set(store.get(hiddenKey(), []));
       const ordered = orderedSections(rawSections, store.get(orderKey(), []));
       const sections = ordered.filter(s => !hiddenKeys.has(s.key));
       buildNav(sections);
       const [hubs, recent] = await Promise.all([server.hubs(), server.recentByLibrary(sections, { limit: 12 })]);
+      if (!stillCurrent()) {
+        if (session.server === server) load();
+        return;
+      }
       // Show only the two standard in-progress hubs on Home. Everything else Plex
       // returns — cross-library "Recently Added" (replaced by the per-library rows
       // below), "Recently Added Videos", and curated collections like "Oh, The
       // Horror!" — is dropped so Home stays clean.
       const stdHubs = hubs.filter(h => h.hubIdentifier === 'home.continue' || h.hubIdentifier === 'home.ondeck');
       setHubs(stdHubs.concat(recent));
-      store.set('homeCache', { v: HOME_CACHE_V, server: server.id, sections, hubs: stdHubs.map(slimHub), recent: recent.map(slimHub) });
+      store.set('homeCache', { v: HOME_CACHE_V, server: server.id, profile, sections, hubs: stdHubs.map(slimHub), recent: recent.map(slimHub) });
     } catch (e) {
       error('home load failed', e);
       if (!rows.length) setText(empty, 'Couldn\'t load from ' + server.name + '. Press OK to retry.');
@@ -374,9 +387,12 @@ export function HomeScreen() {
   hiddenKeys = new Set(store.get(hiddenKey(), []));
   // Bump HOME_CACHE_V whenever the hub shape changes so an old cached Home
   // (e.g. one still holding "Recently Added Videos") is discarded, not flashed.
-  if (cached && session.server && cached.server === session.server.id && cached.v === HOME_CACHE_V) {
+  if (cached && session.server && cached.server === session.server.id && cached.profile === profileKey() && cached.v === HOME_CACHE_V) {
     allSections = cached.sections || [];
-    buildNav(cached.sections || []);
+    // Cached sections may predate a visibility or order change; apply this
+    // profile's current preferences before the first paint.
+    const orderedCached = orderedSections(cached.sections || [], store.get(orderKey(), []));
+    buildNav(orderedCached.filter(s => !hiddenKeys.has(s.key)));
     setHubs((cached.hubs || []).concat(cached.recent || []));
   } else {
     buildNav([]);
