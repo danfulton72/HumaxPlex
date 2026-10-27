@@ -154,7 +154,7 @@ export function LibraryScreen(section) {
   async function loadRecent() {
     try {
       const recType = section.type === 'show' ? 4 : 1; // 4 = episode, 1 = movie
-      const recs = await session.server.recentItems(section.key, { type: recType, limit: RECENT_LIMIT });
+      const recs = await session.server.recentItems(section.key, { type: recType, limit: RECENT_LIMIT, isShow: section.type === 'show' });
       if (!recs.length) return;
       recent = recs;
       // The recent block now occupies the first R() slots, so the total grows by

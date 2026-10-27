@@ -56,16 +56,30 @@ export class Server {
   }
 
   // Cross-library "Recently Added" rows for Home (Option B): Plex's own
-  // home.movies.recent / home.television.recent hubs, trimmed to RECENT_LIMIT
-  // and with anything already in Continue Watching removed so an item doesn't
-  // appear twice. Returns [] when neither hub is present.
+  // home.movies.recent / home.television.recent hubs, trimmed to RECENT_LIMIT,
+  // with anything already in Continue Watching removed so an item doesn't appear
+  // twice, and capped at one item per creator (channel/show for TV, studio for
+  // movies) so a single prolific source doesn't fill the whole row. Returns []
+  // when neither hub is present.
   async recentHubs(limit = 12) {
     const mc = await this.get('/hubs', { count: 24, includeExternalMedia: 0 });
     const watching = new Set((await this.onDeck()).map(m => m.ratingKey));
     const out = [];
     for (const h of (mc.Hub || [])) {
-      if (h.hubIdentifier !== 'home.movies.recent' && h.hubIdentifier !== 'home.television.recent') continue;
-      const meta = (h.Metadata || []).filter(m => !watching.has(m.ratingKey)).slice(0, limit);
+      const isTv = h.hubIdentifier === 'home.television.recent';
+      if (!isTv && h.hubIdentifier !== 'home.movies.recent') continue;
+      const seenCreators = new Set();
+      const meta = [];
+      for (const m of (h.Metadata || [])) {
+        if (watching.has(m.ratingKey)) continue;
+        const creator = isTv
+          ? (m.grandparentTitle || '')
+          : (m.studio || ((m.Director && m.Director[0] && m.Director[0].tag) || ''));
+        if (creator && seenCreators.has(creator)) continue;
+        if (creator) seenCreators.add(creator);
+        meta.push(m);
+        if (meta.length >= limit) break;
+      }
       if (meta.length) out.push({ ...h, Metadata: meta, size: meta.length });
     }
     return out;
@@ -86,17 +100,27 @@ export class Server {
 
   // Recently added items within ONE section (Option A). Shows use type=episode
   // so a freshly added series surfaces its newest episodes, not just the show.
-  // Trimmed to `limit` and deduped against in-progress items.
-  async recentItems(sectionId, { type, limit = 12 } = {}) {
+  // Trimmed to `limit`, deduped against in-progress items, and capped at one
+  // item per creator (channel/show for shows, studio/director for movies) so a
+  // single prolific source doesn't fill the whole row.
+  async recentItems(sectionId, { type, limit = 12, isShow = false } = {}) {
     const [res, watching] = await Promise.all([
-      this.items(sectionId, 0, limit * 2, { sort: 'addedAt:desc', type }),
+      this.items(sectionId, 0, limit * 3, { sort: 'addedAt:desc', type }),
       this.onDeck(),
     ]);
-    const seen = new Set(watching.map(m => m.ratingKey));
+    const seenKeys = new Set(watching.map(m => m.ratingKey));
+    const seenCreators = new Set();
     const out = [];
     for (const it of res.items) {
-      if (seen.has(it.ratingKey)) continue;
-      seen.add(it.ratingKey);
+      if (seenKeys.has(it.ratingKey)) continue;
+      const creator = isShow
+        ? (it.grandparentTitle || '')
+        : (it.studio || ((it.Director && it.Director[0] && it.Director[0].tag) || it.title || ''));
+      // Only dedupe when there IS a creator to group by; an empty key means
+      // "no grouping info" and the item always shows (never hidden by accident).
+      if (creator && seenCreators.has(creator)) continue;
+      seenKeys.add(it.ratingKey);
+      if (creator) seenCreators.add(creator);
       out.push(it);
       if (out.length >= limit) break;
     }
