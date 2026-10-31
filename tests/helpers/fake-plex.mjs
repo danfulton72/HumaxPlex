@@ -36,7 +36,12 @@ export function createFakePlex() {
     },
     async get(path, params) {
       state.requests.push({ path, params });
-      if (path === '/livetv/dvrs') return { Dvr: [{ key: '7', Device: [{ uri: 'http://disp:9191/hdhr' }] }] };
+      if (path === '/livetv/dvrs') {
+        // Tests can simulate an expired sign-in: reject DVR discovery with a
+        // status (e.g. 403) instead of returning the tuner list.
+        if (state.dvrFailure) { const e = new Error('HTTP ' + state.dvrFailure.status); e.status = state.dvrFailure.status; throw e; }
+        return { Dvr: [{ key: '7', Device: [{ uri: 'http://disp:9191/hdhr' }] }] };
+      }
       if (path === '/media/providers') return { MediaProvider: [{ identifier: 'tv.plex.providers.epg.xmltv:7' }] };
       if (path.endsWith('/watchnow/all')) {
         // Deliberately out of order: the guide sorts by channel number.

@@ -6,6 +6,7 @@
 // two or more). Number entry searches every channel, not just the list shown.
 import { h, setText } from '../../util/dom.js';
 import { getRaw, setRaw } from '../../util/store.js';
+import { signOut } from '../../session.js';
 import { showOptions } from '../../ui/options.js';
 import { channelLabel, channelGroup, chanKey, findByNumber, epgProviderPaths, channelRowsFrom, safeObject } from './helpers.js';
 
@@ -23,12 +24,32 @@ export function createChannels(ctx) {
 
   // ---- loading ----------------------------------------------------------------
 
+  // A 403 from Plex's privileged endpoints (Live TV, status) means the saved
+  // sign-in has lost its scope — it still reads the library but no longer
+  // authorises DVR. plex.tv rejects such tokens outright, so reconnect() can't
+  // mint a fresh one; only a re-sign-in fixes it. Show that clearly and hand
+  // back to the login screen instead of leaving a dead "unavailable" message.
+  async function reauth(message) {
+    setText(ctx.info, message);
+    ctx.setView('empty');
+    signOut();
+    window.dispatchEvent(new Event('easyplex:restart'));
+  }
+
   async function load() {
     ctx.el.classList.remove('ep-grid-active');
     ctx.list.innerHTML = '';
     setText(ctx.info, 'Checking Plex DVR and programme guide…');
     try {
-      const d = await ctx.server.get('/livetv/dvrs');
+      let d;
+      try {
+        d = await ctx.server.get('/livetv/dvrs');
+      } catch (e) {
+        if (e && e.status === 403) {
+          return reauth('Plex sign-in expired for Live TV. Re-linking your account…');
+        }
+        throw e;
+      }
       state.dvrs = d.Dvr || d.DVR || d.Directory || [];
       if (!state.dvrs.length) {
         setText(ctx.info, 'No Plex DVR found. Configure a supported tuner in Plex Media Server → Live TV & DVR.');

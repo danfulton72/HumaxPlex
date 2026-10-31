@@ -320,3 +320,22 @@ test('reopening resumes on the last channel; autoplay plays it', async () => {
   s2.destroy();
   s3.destroy();
 });
+
+test('an expired sign-in (403 on DVR discovery) re-links instead of dead-ending', async () => {
+  // Simulate the stale-token case: /livetv/dvrs rejects with 403 while the
+  // library still reads fine. The screen must say why and hand back to login.
+  plex.state.dvrFailure = { status: 403 };
+  let restarted = false;
+  const onRestart = () => { restarted = true; };
+  window.addEventListener('easyplex:restart', onRestart);
+  const tokenBefore = session.token;
+  const sAuth = LiveTvScreen();
+  document.body.appendChild(sAuth.el);
+  await sleep(400);
+  assert.match(sAuth.el.querySelector('.ep-live-status').textContent, /sign-in expired/i, 'explains the 403 as an expired sign-in');
+  assert.ok(restarted, 'dispatches easyplex:restart so app.js routes to login');
+  assert.notEqual(session.token, tokenBefore, 'signs out so the next start() goes to the PIN screen');
+  window.removeEventListener('easyplex:restart', onRestart);
+  plex.state.dvrFailure = null;
+  sAuth.destroy();
+});
